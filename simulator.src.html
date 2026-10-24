@@ -1,0 +1,1192 @@
+<title>AgarSaaS Drone Simulator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/*__LEAFLET_CSS__*/</style>
+<style>
+/* Layout: ground-control station. Mission map + record on the left, 3D flight view with camera inset and telemetry on the right. Single dark look on purpose (field GCS screens are dark). */
+:root {
+  --ground: #101614;      /* page */
+  --panel: #18211e;       /* panels */
+  --panel-2: #212c28;     /* inputs, rows */
+  --line: #2f3d38;
+  --ink: #e4ebe6;
+  --ink-dim: #93a39b;
+  --resin: #d99a3e;       /* agarwood resin amber, the accent */
+  --resin-ink: #1b1206;
+  --canopy: #5fae6e;
+  --sky: #6fb3d9;
+  --warn: #e4b53a;
+  --crit: #e0614f;
+  --ok: #6cc28a;
+  --f-display: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--ground); color: var(--ink); font-family: var(--f-body); font-size: 14px; }
+* { box-sizing: border-box; }
+button, select, input { font: inherit; color: inherit; }
+.app { display: flex; flex-direction: column; min-height: 100%; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 12px; gap: 12px; }
+header.top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.brand { font-family: var(--f-display); font-weight: 700; font-size: 22px; letter-spacing: .02em; }
+.brand span { color: var(--resin); }
+.simtag { font-family: var(--f-data); font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--resin-ink); background: var(--resin); padding: 3px 8px; border-radius: 3px; }
+.disclaimer { flex: 1 1 360px; min-width: 0; color: var(--ink-dim); font-size: 12.5px; line-height: 1.45; }
+.grid { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 12px; flex: 1; min-height: 0; }
+@media (max-width: 900px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; min-width: 0; }
+.panel > h2 { margin: 0; padding: 9px 12px; font-family: var(--f-display); font-weight: 600; font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-dim); border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+.panel > h2 .r { margin-left: auto; text-transform: none; letter-spacing: 0; font-family: var(--f-body); font-weight: 500; }
+.pad { padding: 10px 12px; }
+#map { height: 330px; background: #0c1210; border-radius: 0 0 6px 6px; }
+.leaflet-container { background: #0c1210; font-family: var(--f-body); }
+.leaflet-control-attribution { background: rgba(16,22,20,.8) !important; color: var(--ink-dim) !important; }
+.leaflet-control-attribution a { color: var(--sky) !important; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.row label { color: var(--ink-dim); font-size: 12.5px; }
+select, input[type=number], input[type=text] { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 5px 7px; min-width: 0; }
+input[type=range] { accent-color: var(--resin); width: 100%; }
+.btn { background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 7px 12px; cursor: pointer; font-weight: 600; }
+.btn:hover { border-color: var(--ink-dim); }
+.btn.primary { background: var(--resin); color: var(--resin-ink); border-color: var(--resin); }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+.kv { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 12px; font-size: 12.5px; }
+.kv dt { color: var(--ink-dim); }
+.kv dd { margin: 0; font-family: var(--f-data); font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
+.sub { font-family: var(--f-display); font-weight: 600; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-dim); margin: 10px 0 5px; display: flex; gap: 6px; align-items: center; }
+.chip { display: inline-block; font-family: var(--f-data); font-size: 10.5px; padding: 1px 6px; border-radius: 3px; letter-spacing: .03em; text-transform: none; }
+.chip.given { background: #2b3a52; color: #bcd3f5; }
+.chip.pub { background: #23402c; color: #b5e3c1; }
+.chip.sim { background: #4a3517; color: #f3cf93; }
+.chip.warn { background: #4b3b12; color: var(--warn); }
+.view-wrap { position: relative; }
+#view { width: 100%; height: min(62vh, 560px); min-height: 320px; display: block; border-radius: 0 0 6px 6px; background: #0c1210; touch-action: none; }
+.hud { position: absolute; left: 10px; top: 10px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+.hud .badge { font-family: var(--f-data); font-size: 11px; background: rgba(12,18,16,.78); border: 1px solid var(--line); padding: 3px 7px; border-radius: 3px; }
+.hud .badge.rec { color: var(--crit); }
+.inset { position: absolute; right: 10px; top: 10px; width: 30%; max-width: 260px; min-width: 140px; border: 1px solid var(--resin); border-radius: 4px; pointer-events: none; }
+.leaflet-control-layers-toggle { background-image: none !important; width: auto !important; height: auto !important; padding: 4px 8px; font-size: 12px; color: #222; text-decoration: none; }
+.leaflet-control-layers-toggle::after { content: "Layers"; }
+.inset .cap { position: absolute; left: 0; right: 0; bottom: 0; font-family: var(--f-data); font-size: 10.5px; padding: 3px 6px; background: rgba(0,0,0,.6); display: flex; justify-content: space-between; }
+.inset .ratio { width: 100%; aspect-ratio: 4 / 3; max-width: 100%; }
+.viewbar { position: absolute; left: 10px; bottom: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+.viewbar .btn { padding: 4px 9px; font-size: 12px; background: rgba(24,33,30,.9); }
+.viewbar .btn.on { border-color: var(--resin); color: var(--resin); }
+.tele { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 1px; background: var(--line); border-top: 1px solid var(--line); }
+.tele div { background: var(--panel); padding: 7px 10px; }
+.tele b { display: block; font-family: var(--f-data); font-weight: 500; font-size: 15px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tele div.wide { grid-column: span 2; }
+.tele small { color: var(--ink-dim); font-size: 11px; letter-spacing: .05em; text-transform: uppercase; }
+.lower { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 1250px) { .lower { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+canvas.chart { width: 100%; height: 110px; display: block; }
+.log { font-family: var(--f-data); font-size: 11.5px; line-height: 1.5; max-height: 190px; overflow: auto; padding: 8px 12px; }
+.log div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log .t { color: var(--ink-dim); }
+.log .hit { color: var(--resin); }
+.log .warn { color: var(--warn); }
+.bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--resin); width: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--ink-dim); padding: 6px 12px 10px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.note { font-size: 12px; color: var(--ink-dim); line-height: 1.45; }
+.note b { color: var(--ink); font-weight: 600; }
+.tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line); }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 8px 12px; cursor: pointer; color: var(--ink-dim); font-family: var(--f-display); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; font-size: 12.5px; }
+.tabs button[aria-selected=true] { color: var(--ink); border-bottom-color: var(--resin); }
+textarea#csvout { width: 100%; height: 90px; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; font-family: var(--f-data); font-size: 11px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+<style>
+.verdict { font-family: var(--f-data); font-size: 12px; padding: 3px 8px; border-radius: 3px; font-weight: 500; }
+.verdict.go { background: #1f4a2e; color: #a8ecbe; }
+.verdict.caution { background: #4b3b12; color: var(--warn); }
+.verdict.nogo { background: #4d1f1a; color: #ffb3a8; }
+.cond { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+.cond label { display: flex; flex-direction: column; gap: 3px; color: var(--ink-dim); font-size: 12px; min-width: 0; }
+.cond select { width: 100%; }
+.cond .full { grid-column: 1 / -1; }
+.slrow { display: grid; grid-template-columns: 112px minmax(0, 1fr) 62px; gap: 8px; align-items: center; }
+.slrow label { color: var(--ink-dim); font-size: 12.5px; }
+.slrow span { font-family: var(--f-data); text-align: right; font-size: 12.5px; }
+.reasons { font-size: 12px; color: var(--ink-dim); line-height: 1.45; margin: 0; padding-left: 16px; }
+</style>
+<div class="app">
+  <header class="top">
+    <div class="brand">Agar<span>SaaS</span> · UAV Mission Simulator</div>
+    <div class="simtag">Simulation · not field data</div>
+    <p class="disclaimer" id="disclaimer">Tree records are the project's 10,000-row sample dataset, used unchanged. Terrain, surrounding canopy and land cover come from public layers (Copernicus GLO-30 elevation, Meta/WRI 1 m canopy height, ESA WorldCover 2021, Hansen tree cover). Neighbouring trees, weather, flight physics, imagery, LiDAR and multispectral readings are simulated. No real drone flew over agarwood here.</p>
+  </header>
+
+  <div class="grid">
+    <div class="col">
+      <section class="panel">
+        <h2>Mission map <span class="r"><select id="colorBy" aria-label="Colour trees by"><option value="grade">Colour: grade</option><option value="state">Colour: state</option><option value="wc">Colour: land cover (public)</option><option value="cover">Colour: canopy cover (public)</option><option value="elev">Colour: elevation (public)</option></select></span></h2>
+        <div id="map"></div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <section class="panel">
+        <div class="tabs" role="tablist">
+          <button role="tab" id="tabT" aria-selected="true">Target tree</button>
+          <button role="tab" id="tabR" aria-selected="false">Route tour</button>
+        </div>
+        <div class="pad" id="paneT">
+          <div class="row">
+            <label for="treeSearch">Tree ID</label>
+            <input type="text" id="treeSearch" placeholder="AGR_NG_2026_00001" style="flex:1">
+            <button class="btn" id="btnFind">Find</button>
+            <button class="btn" id="btnRandom" title="Pick a random tree inside Nagaland under tree cover">Random</button>
+          </div>
+          <div class="sub">Given record <span class="chip given">dataset · unchanged</span></div>
+          <dl class="kv" id="given"></dl>
+          <div class="sub">At this location <span class="chip pub">public layers</span></div>
+          <dl class="kv" id="public"></dl>
+          <div id="locWarn" class="note" style="margin-top:6px"></div>
+        </div>
+        <div class="pad" id="paneR" hidden>
+          <p class="note">Plans a multi-tree tour starting at the selected tree and visiting its nearest neighbours. It shows why one drone cannot cover these trees on one battery: the sample's trees are spread over about 145 × 200 km.</p>
+          <div class="row" style="margin-top:8px">
+            <label for="tourN">Trees</label><input type="number" id="tourN" value="12" min="3" max="60" style="width:70px">
+            <label for="tourSpd">Cruise m/s</label><input type="number" id="tourSpd" value="15" min="5" max="21" style="width:70px">
+            <button class="btn primary" id="btnTour">Plan &amp; fly tour</button>
+          </div>
+          <dl class="kv" id="tourOut" style="margin-top:10px"></dl>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Conditions <span class="r"><span class="verdict go" id="verdict">GO</span></span></h2>
+        <div class="pad" style="display:grid;gap:10px">
+          <div class="cond">
+            <label>Season<select id="season">
+              <option value="winter">Winter · Dec–Feb</option>
+              <option value="pre">Pre-monsoon · Mar–May</option>
+              <option value="monsoon">Monsoon · Jun–Sep</option>
+              <option value="post" selected>Post-monsoon · Oct–Nov</option>
+            </select></label>
+            <label>Weather<select id="weather">
+              <option value="auto" selected>Typical for season</option>
+              <option value="clear">Clear</option>
+              <option value="overcast">Overcast</option>
+              <option value="drizzle">Light rain</option>
+              <option value="rain">Heavy rain</option>
+              <option value="fog">Fog / low cloud</option>
+              <option value="storm">Thunderstorm gusts</option>
+            </select></label>
+            <label class="full">Plantation life cycle<select id="stage">
+              <option value="rec" selected>As recorded in dataset</option>
+              <option value="1">Year 1 · seedlings</option>
+              <option value="3">Year 3 · saplings</option>
+              <option value="5">Year 5 · ready for inoculation</option>
+              <option value="7">Year 7 · two years after inoculation</option>
+              <option value="10">Year 10 · harvest</option>
+            </select></label>
+            <label>Drone<select id="model">
+              <option value="m3m" selected>Multispectral quad · 0.95 kg</option>
+              <option value="m350">Enterprise quad · 6.5 kg, IP55</option>
+            </select></label>
+            <label>Graphics<select id="quality">
+              <option value="high" selected>High · shadows (RTX GPU)</option>
+              <option value="low">Low · integrated GPU</option>
+            </select></label>
+          </div>
+          <div class="slrow"><label for="tod">Time of day</label><input type="range" id="tod" min="6" max="18" step="0.25" value="10"><span id="todV">10:00</span></div>
+          <div class="slrow"><label for="wind">Wind at 10 m</label><input type="range" id="wind" min="0" max="18" step="0.5" value="3"><span id="windV">3 m/s</span></div>
+          <div class="slrow"><label for="windDir">Wind from</label><input type="range" id="windDir" min="0" max="345" step="15" value="225"><span id="windDirV">SW</span></div>
+          <dl class="kv" id="condOut"></dl>
+          <ul class="reasons" id="reasons"></ul>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Flight plan</h2>
+        <div class="pad" style="display:grid;gap:9px">
+          <div class="slrow"><label for="alt">Altitude AGL</label><input type="range" id="alt" min="30" max="120" step="5" value="60"><span id="altV">60 m</span></div>
+          <div class="slrow"><label for="spd">Survey speed</label><input type="range" id="spd" min="3" max="15" step="1" value="8"><span id="spdV">8 m/s</span></div>
+          <div class="slrow"><label for="ovl">Side overlap</label><input type="range" id="ovl" min="50" max="85" step="5" value="70"><span id="ovlV">70 %</span></div>
+          <div class="row"><label for="inspect">Close inspection of target</label><select id="inspect"><option value="1" selected>On · orbit with line-of-sight checks</option><option value="0">Off</option></select></div>
+          <div class="row"><label for="tscale">Sim speed</label><select id="tscale"><option>1</option><option>2</option><option selected>5</option><option>10</option><option>20</option></select><span class="note">× real time</span></div>
+          <div class="note" id="planInfo"></div>
+          <div class="row">
+            <button class="btn primary" id="btnFly">Launch survey</button>
+            <button class="btn" id="btnPause" disabled>Pause</button>
+            <button class="btn" id="btnRTH" disabled>Return home</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="panel">
+        <h2><span id="sceneTitle">3D flight view</span><span class="r" id="sceneSub"></span></h2>
+        <div class="view-wrap">
+          <canvas id="view"></canvas>
+          <div class="hud"><span class="badge" id="hudMode">PRE-FLIGHT</span><span class="badge" id="hudGps"></span><span class="badge" id="hudWx"></span><span class="badge rec" id="hudRec" hidden>● REC</span><span class="badge" id="hudLos" hidden></span></div>
+          <div class="inset"><div class="ratio" id="insetBox"></div><div class="cap"><span id="camLabel">RGB · nadir · simulated</span><span id="camCount">0 img</span></div></div>
+          <div class="viewbar">
+            <button class="btn" data-cam="fpv" title="First-person view from the drone's gimbal camera">FPV</button>
+            <button class="btn on" data-cam="tpp" title="Third-person chase view">TPP</button>
+            <button class="btn" data-cam="orbit" title="Drag to orbit, scroll to zoom">Orbit</button>
+            <button class="btn" data-cam="top">Top</button>
+            <button class="btn" id="btnBand">Camera: RGB</button>
+          </div>
+        </div>
+        <div class="tele">
+          <div class="wide"><small>Lat / Lon</small><b id="tLL">–</b></div>
+          <div><small>Alt AGL</small><b id="tAlt">0.0 m</b></div>
+          <div><small>Ground speed</small><b id="tSpd">0.0 m/s</b></div>
+          <div><small>Air speed</small><b id="tAir">0.0 m/s</b></div>
+          <div><small>Tilt</small><b id="tTilt">0°</b></div>
+          <div><small>Heading</small><b id="tHdg">000°</b></div>
+          <div><small>Power</small><b id="tPow">0 W</b></div>
+          <div><small>Battery</small><b id="tBat">100 %</b></div>
+          <div><small>Flight time</small><b id="tTime">00:00</b></div>
+          <div><small>Distance</small><b id="tDist">0 m</b></div>
+          <div><small>Coverage</small><b id="tCov">0 %</b></div>
+        </div>
+      </section>
+
+      <div class="lower">
+        <section class="panel">
+          <h2>LiDAR canopy height <span class="chip sim">simulated</span></h2>
+          <canvas class="chart" id="chLidar"></canvas>
+          <div class="pad note" id="lidarNote" style="padding-top:4px">Canopy height above ground under the drone, from simulated nadir LiDAR. Rain drops some returns (gaps in the line).</div>
+        </section>
+        <section class="panel">
+          <h2>Multispectral NDVI <span class="chip sim">simulated</span></h2>
+          <canvas class="chart" id="chNdvi"></canvas>
+          <div class="pad note" style="padding-top:4px">Reading at the nadir point. Over the target tree the sensor returns its NDVI plus noise; season, wet leaves and rain change the reading.</div>
+        </section>
+        <section class="panel">
+          <h2>Target result</h2>
+          <div class="pad">
+            <dl class="kv" id="targetOut"></dl>
+            <div class="sub">Mission progress</div>
+            <div class="bar"><i id="progBar"></i></div>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Mission log</h2>
+          <div class="log" id="log"></div>
+        </section>
+        <section class="panel">
+          <h2>Export <span class="r note">CSV</span></h2>
+          <div class="pad" style="display:grid;gap:8px">
+            <div class="row">
+              <button class="btn" id="exFlight">Flight log</button>
+              <button class="btn" id="exPhotos">Photos</button>
+              <button class="btn" id="exScene">Scene trees</button>
+            </div>
+            <textarea id="csvout" readonly aria-label="CSV output" placeholder="Fly a survey, then pick an export. The CSV appears here; it is copied to your clipboard and downloaded where the browser allows."></textarea>
+          </div>
+        </section>
+        <section class="panel">
+          <h2>Data check</h2>
+          <div class="pad note" id="checkOut"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+<script>/*__THREE__*/</script>
+<script>/*__LEAFLET_JS__*/</script>
+<script id="simdata" type="application/json">__DATA__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("simdata").textContent);
+const C = D.cols, N = C.Tree_ID.length;
+const $ = id => document.getElementById(id);
+const GRADE_COL = ["#d99a3e", "#7e6bd6", "#e0614f", "#4fa3d9"];
+const STATE_COL = ["#d99a3e", "#4fa3d9", "#c56bd6", "#6cc28a", "#e4b53a", "#e0614f"];
+const WC_COL = {10: "#3f9a4f", 20: "#a6a14a", 30: "#c8d36a", 40: "#e8c45a", 50: "#e0614f", 60: "#9a8f80", 80: "#4fa3d9", 90: "#4fc0b0", 95: "#2a8a6a", 100: "#cccccc"};
+const fmt = (v, d = 2) => (typeof v === "number" ? (Number.isInteger(v) ? String(v) : v.toFixed(d)) : String(v));
+const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, t) => a + (b - a) * t;
+const gradeName = i => D.grades[C.Assigned_Agarwood_Grade[i]];
+const DEG = Math.PI / 180, G = 9.81;
+function rng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
+function gauss(r) { let u = 0; while (u === 0) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const R0 = Math.random;
+
+/* ================= Conditions model ================= */
+// Seasonal climate for the Naga hills / Brahmaputra valley (approximate, sea-level reference temperature)
+const SEASONS = {
+  winter:  { name: "Winter", tSea: 17, auto: h => (h < 9 ? "fog" : "clear"), ndvi: -0.06, hue: -0.035, sat: -0.12, light: -0.02, ground: 0x6b6a45, sunMax: 46, sky: 0xaecbe0 },
+  pre:     { name: "Pre-monsoon", tSea: 28, auto: h => (h >= 14 ? "storm" : "overcast"), ndvi: -0.02, hue: 0.012, sat: 0.05, light: 0.04, ground: 0x6a6038, sunMax: 75, sky: 0xa5c2d6 },
+  monsoon: { name: "Monsoon", tSea: 29, auto: () => "drizzle", ndvi: 0.04, hue: 0.0, sat: 0.08, light: -0.03, ground: 0x2c4424, sunMax: 84, sky: 0x9fb2bf },
+  post:    { name: "Post-monsoon", tSea: 25, auto: () => "clear", ndvi: 0.0, hue: 0.0, sat: 0.0, light: 0.0, ground: 0x3d5230, sunMax: 60, sky: 0x9cc4dc },
+};
+const WEATHER = {
+  clear:    { name: "Clear", rain: 0, gust: 0.18, vis: 1400, light: 1.0, sky: 0, cloud: 0 },
+  overcast: { name: "Overcast", rain: 0, gust: 0.25, vis: 1000, light: 0.55, sky: 0.45, cloud: 1 },
+  drizzle:  { name: "Light rain", rain: 2.5, gust: 0.28, vis: 650, light: 0.45, sky: 0.6, cloud: 1 },
+  rain:     { name: "Heavy rain", rain: 18, gust: 0.38, vis: 320, light: 0.3, sky: 0.75, cloud: 1 },
+  fog:      { name: "Fog / low cloud", rain: 0, gust: 0.08, vis: 140, light: 0.5, sky: 0.8, cloud: 1 },
+  storm:    { name: "Thunderstorm gusts", rain: 9, gust: 0.65, vis: 400, light: 0.3, sky: 0.85, cloud: 1 },
+};
+// Drone classes (approximate public specs of the class, not a specific product test)
+const MODELS = {
+  m3m:  { name: "Multispectral quad", mass: 0.951, CdA: 0.022, tilt: 35, maxWind: 12, ip: false, wh: 77, pHover: 108, vmax: 15, size: 2.2 },
+  m350: { name: "Enterprise quad (IP55)", mass: 6.47, CdA: 0.11, tilt: 30, maxWind: 12, ip: true, wh: 2 * 263, pHover: 880, vmax: 23, size: 3.2 },
+};
+function conditions() {
+  const se = SEASONS[$("season").value], h = +$("tod").value;
+  const wKey = $("weather").value === "auto" ? se.auto(h) : $("weather").value;
+  const wx = WEATHER[wKey], md = MODELS[$("model").value];
+  const elev = world ? world.elev : 300;
+  const tC = se.tSea - 6.5 * elev / 1000 - (h < 8 ? 3 : 0) - (wx.rain > 0 ? 2 : 0);
+  const pPa = 101325 * Math.pow(1 - 2.25577e-5 * elev, 5.25588);
+  const rho = pPa / (287.05 * (tC + 273.15));
+  const U = +$("wind").value, from = +$("windDir").value;
+  const toDir = (from + 180) * DEG; // wind blows toward this bearing (0 = north)
+  const wdir = { x: Math.sin(toDir), z: -Math.cos(toDir) }; // local frame: x east, z south
+  const capFactor = tC < 10 ? 0.82 : tC < 18 ? 0.93 : 1.0;
+  return { se, wx, wKey, md, h, tC, rho, pPa, U, from, wdir, capFactor, elev };
+}
+function verdict(c) {
+  const why = [], gustPeak = c.U * (1 + 2.2 * c.wx.gust) * Math.pow(60 / 10, 0.2);
+  let level = 0;
+  if (c.wKey === "storm") { level = 2; why.push("Thunderstorm activity: lightning and downbursts. Do not fly."); }
+  const sustained = c.U * Math.pow(60 / 10, 0.2);
+  if (sustained > c.md.maxWind || gustPeak > 1.3 * c.md.maxWind) { level = Math.max(level, 2); why.push(`Wind at survey height about ${sustained.toFixed(0)} m/s with gusts near ${gustPeak.toFixed(0)} m/s, beyond the ${c.md.maxWind} m/s wind rating.`); }
+  else if (gustPeak > 0.8 * c.md.maxWind) { level = Math.max(level, 1); why.push(`Gusts near ${gustPeak.toFixed(0)} m/s: expect drift and higher power draw.`); }
+  if (c.wx.rain >= 10 && !c.md.ip) { level = 2; why.push("Heavy rain and this drone has no IP rating."); }
+  else if (c.wx.rain > 0 && !c.md.ip) { level = Math.max(level, 1); why.push("Rain and no IP rating: keep the flight short."); }
+  else if (c.wx.rain > 0) why.push("IP55 airframe: rain is within rating, but wet lenses and LiDAR dropouts reduce data quality.");
+  if (c.wx.vis < 500) { level = Math.max(level, 1); why.push(`Visibility about ${c.wx.vis} m: visual line of sight to the drone is at risk.`); }
+  if (c.h < 7 || c.h > 17.25) { level = Math.max(level, 1); why.push("Low sun: long shadows, weak multispectral signal."); }
+  if (c.tC < 10) why.push(`Cold air (${c.tC.toFixed(0)} °C) cuts usable battery to about ${Math.round(c.capFactor * 100)} %.`);
+  if (!why.length) why.push("Within limits for this airframe.");
+  return { level, why, gustPeak };
+}
+function refreshConditions() {
+  const c = conditions(), v = verdict(c);
+  const el = $("verdict"); el.className = "verdict " + ["go", "caution", "nogo"][v.level]; el.textContent = ["GO", "CAUTION", "NO-GO"][v.level];
+  const comp = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(c.from / 45) % 8];
+  $("windDirV").textContent = comp; $("windV").textContent = c.U + " m/s";
+  const hh = Math.floor(c.h), mm = Math.round((c.h - hh) * 60); $("todV").textContent = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  $("condOut").innerHTML = `<dt>Weather now</dt><dd>${c.wx.name}</dd><dt>Air temperature</dt><dd>${c.tC.toFixed(1)} °C</dd><dt>Air density</dt><dd>${c.rho.toFixed(3)} kg/m³</dd><dt>Rain rate</dt><dd>${c.wx.rain} mm/h</dd><dt>Visibility</dt><dd>${c.wx.vis >= 1400 ? "> 10 km" : c.wx.vis + " m"}</dd><dt>Site elevation (DEM)</dt><dd>${c.elev.toFixed(0)} m</dd>`;
+  $("reasons").innerHTML = v.why.map(w => `<li>${w}</li>`).join("");
+  $("btnFly").textContent = st && !st.done ? $("btnFly").textContent : v.level === 2 ? "Launch anyway (sim)" : st && st.done ? "Fly again" : "Launch survey";
+  $("hudWx").textContent = `${c.se.name} · ${c.wx.name} · ${c.tC.toFixed(0)} °C · wind ${c.U} m/s from ${comp}`;
+  applyEnvironment(c);
+  return c;
+}
+
+/* ================= Data check panel ================= */
+$("checkOut").innerHTML = `<b>${D.check.records.toLocaleString()}</b> tree records loaded. The build script compared every given value with the source spreadsheet: <b>all unchanged</b> (SHA-256 of given values ${D.check.sha256_of_given_values.slice(0, 16)}…). Simulated trees, weather and sensor readings are generated in the browser and never written back into the dataset. Life-cycle stages other than “As recorded” show projected sizes, marked as projections.<br><br>Where the sample's coordinates fall: ` +
+  D.states.map((s, k) => { const n = C.state.filter(x => x === k).length; return n ? `${s} ${n.toLocaleString()}` : ""; }).filter(Boolean).join(" · ") + ".";
+
+/* ================= Map ================= */
+const map = L.map("map", { preferCanvas: true }).setView([26.3, 94.18], 8);
+const sat = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 18, attribution: "Imagery © Esri, Maxar, Earthstar Geographics" });
+sat.addTo(map);
+const outline = L.layerGroup().addTo(map);
+for (const [name, g] of Object.entries(D.outline)) L.geoJSON(g, { style: { color: name === "Nagaland" ? "#d99a3e" : "#93a39b", weight: name === "Nagaland" ? 2 : 1, fill: false, dashArray: name === "Nagaland" ? null : "4 4" }, interactive: false }).addTo(outline);
+L.control.layers({}, { "Satellite (online only)": sat, "State boundaries": outline }, { collapsed: true }).addTo(map);
+const renderer = L.canvas({ padding: 0.3 });
+const dots = [];
+function dotColor(i) {
+  const m = $("colorBy").value;
+  if (m === "grade") return GRADE_COL[C.Assigned_Agarwood_Grade[i]];
+  if (m === "state") return STATE_COL[C.state[i]];
+  if (m === "wc") return WC_COL[C.pub_worldcover_center[i]] || "#888";
+  if (m === "elev") { const t = clamp(C.pub_elev_m[i] / 2000, 0, 1); return `hsl(${200 - t * 170},60%,${35 + t * 30}%)`; }
+  const c = C.pub_canopy_cover[i]; return `hsl(${30 + c * 100},55%,${30 + c * 25}%)`;
+}
+for (let i = 0; i < N; i++) {
+  const m = L.circleMarker([C.Latitude[i], C.Longitude[i]], { renderer, radius: 2.6, weight: 0, fillOpacity: .9, fillColor: dotColor(i) });
+  m.on("click", () => selectTree(i, true)); m.addTo(map); dots.push(m);
+}
+function legend() {
+  const m = $("colorBy").value; let items = [];
+  if (m === "grade") items = D.grades.map((g, k) => [GRADE_COL[k], g]);
+  else if (m === "state") items = D.states.map((s, k) => [STATE_COL[k], s]).filter((_, k) => C.state.includes(k));
+  else if (m === "wc") items = Object.entries(D.worldcover).filter(([k]) => C.pub_worldcover_center.includes(+k)).map(([k, v]) => [WC_COL[k], v]);
+  else if (m === "elev") items = [[`hsl(200,60%,35%)`, "0 m"], [`hsl(115,60%,50%)`, "1,000 m"], [`hsl(30,60%,65%)`, "≥ 2,000 m"]];
+  else items = [[`hsl(30,55%,30%)`, "0 % canopy ≥ 5 m"], [`hsl(80,55%,42%)`, "50 %"], [`hsl(130,55%,55%)`, "100 %"]];
+  $("legend").innerHTML = items.map(([c, t]) => `<span><i style="background:${c}"></i>${t}</span>`).join("");
+}
+$("colorBy").onchange = () => { dots.forEach((d, i) => d.setStyle({ fillColor: dotColor(i) })); legend(); };
+legend();
+const selMarker = L.circleMarker([0, 0], { radius: 9, color: "#fff", weight: 2, fill: false }).addTo(map);
+let tourLine = null, tourDrone = null;
+
+/* ================= Selection ================= */
+let sel = -1;
+const LABELS = { Plot_Size_Acres: "Plot size (acres)", Height_m: "Height (m)", DBH_cm: "DBH (cm)", Crown_Area_m2: "Crown area (m²)", NDVI: "NDVI", NDRE_Nitrogen_Proxy: "NDRE (N proxy)", Chlorophyll_Index: "Chlorophyll index", Inoculation_Age_Months: "Inoculation age (mo)", Bark_Anomaly_Index: "Bark anomaly index", Total_Stem_Volume_m3: "Stem volume (m³)", Resin_Saturation_Index: "Resin saturation", Extractable_Agarwood_Volume_m3: "Extractable agarwood (m³)", Assigned_Agarwood_Grade: "Grade" };
+const givenValue = (c, i) => c === "Assigned_Agarwood_Grade" ? gradeName(i) : C[c][i];
+function selectTree(i, fromMap) {
+  sel = i; if (st) st.done = true;
+  selMarker.setLatLng([C.Latitude[i], C.Longitude[i]]);
+  if (!fromMap) map.setView([C.Latitude[i], C.Longitude[i]], 11);
+  $("treeSearch").value = C.Tree_ID[i];
+  $("given").innerHTML = D.given_columns.filter(c => c !== "Tree_ID").map(c => `<dt>${LABELS[c] || c}</dt><dd>${fmt(givenValue(c, i), 6)}</dd>`).join("");
+  const wc = C.pub_worldcover_center[i];
+  $("public").innerHTML = [
+    ["State (boundary lookup)", D.states[C.state[i]]],
+    ["Elevation (Copernicus 30 m)", C.pub_elev_m[i].toFixed(0) + " m"],
+    ["Land cover (WorldCover 10 m)", D.worldcover[wc] || wc],
+    ["Tree-cover share, 110 m box", Math.round(C.pub_worldcover_tree_frac[i] * 100) + " %"],
+    ["Canopy height, mean (Meta 1 m)", C.pub_chm_mean_m[i].toFixed(1) + " m"],
+    ["Canopy height, 95th pct", C.pub_chm_p95_m[i].toFixed(0) + " m"],
+    ["Canopy cover ≥ 5 m", Math.round(C.pub_canopy_cover[i] * 100) + " %"],
+    ["Tree cover 2000 (Hansen)", C.pub_hansen_treecover2000[i] + " %"],
+  ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  const w = [];
+  if (C.state[i] !== 0) w.push(`This coordinate is in <b>${D.states[C.state[i]]}</b>, not Nagaland.`);
+  if (wc !== 10) w.push(`Public land cover here is <b>${D.worldcover[wc]}</b>, so the scene shows the plantation inside that setting.`);
+  $("locWarn").innerHTML = w.length ? `<span class="chip warn">check</span> ${w.join(" ")}` : "";
+  buildScene(i);
+}
+$("btnFind").onclick = () => {
+  const q = $("treeSearch").value.trim().toUpperCase();
+  let i = C.Tree_ID.indexOf(q);
+  if (i < 0 && /^\d+$/.test(q)) i = C.Tree_ID.indexOf("AGR_NG_2026_" + q.padStart(5, "0"));
+  if (i < 0) { logMsg(`No tree with ID "${q}". IDs look like AGR_NG_2026_00042.`, "warn"); return; }
+  selectTree(i, false);
+};
+$("treeSearch").onkeydown = e => { if (e.key === "Enter") $("btnFind").click(); };
+$("btnRandom").onclick = () => { let i; do { i = Math.floor(R0() * N); } while (C.pub_canopy_cover[i] < .5 || C.state[i] !== 0); selectTree(i, false); };
+for (const [b, p] of [["tabT", "paneT"], ["tabR", "paneR"]]) $(b).onclick = () => { ["tabT", "tabR"].forEach(x => $(x).setAttribute("aria-selected", x === b)); $("paneT").hidden = p !== "paneT"; $("paneR").hidden = p !== "paneR"; };
+
+/* ================= Renderer & lights ================= */
+const canvas = $("view");
+const R3 = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+R3.setScissorTest(true);
+R3.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9cc4dc);
+scene.fog = new THREE.Fog(0x9cc4dc, 350, 1400);
+const cam = new THREE.PerspectiveCamera(55, 1, 0.3, 4000);
+const HFOV = 73.7 * DEG, ASPECT_SENSOR = 4 / 3; // 4/3" class sensor, 5280 px wide
+const VFOV = 2 * Math.atan(Math.tan(HFOV / 2) / ASPECT_SENSOR);
+const nadir = new THREE.PerspectiveCamera(VFOV / DEG, ASPECT_SENSOR, 0.3, 800);
+const hemi = new THREE.HemisphereLight(0xdfefff, 0x3a4a2a, 0.75); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff1d6, 0.85); scene.add(sun); scene.add(sun.target);
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -260, right: 260, top: 260, bottom: -260, near: 10, far: 1500 });
+sun.shadow.bias = -0.0008;
+
+// wind sway shared by all foliage materials
+const swayU = { uTime: { value: 0 }, uAmp: { value: 0.05 }, uDir: { value: new THREE.Vector2(1, 0) }, uGust: { value: 0.2 } };
+function swayMaterial(color, base01) {
+  const m = new THREE.MeshLambertMaterial(color != null ? { color } : {});
+  m.onBeforeCompile = sh => {
+    Object.assign(sh.uniforms, swayU);
+    sh.vertexShader = "uniform float uTime; uniform float uAmp; uniform vec2 uDir; uniform float uGust;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+      float hh = ${base01 ? "clamp(position.y, 0.0, 1.0)" : "clamp((position.y + 1.0) * 0.5, 0.0, 1.0)"};
+      #ifdef USE_INSTANCING
+        vec2 ph = instanceMatrix[3].xz * 0.21;
+      #else
+        vec2 ph = vec2(0.0);
+      #endif
+      float s = sin(uTime * 1.7 + ph.x + ph.y) * 0.6 + sin(uTime * 3.1 + ph.y * 1.3) * 0.25 * (1.0 + uGust) + 0.55;
+      transformed.xz += uDir * uAmp * hh * hh * s;`);
+  };
+  return m;
+}
+
+/* ================= Terrain ================= */
+function makeTerrain(i) {
+  const raw = atob(C.pub_dem_patch[i]), n = 15, a = new Float32Array(n * n);
+  for (let k = 0; k < n * n; k++) { let v = raw.charCodeAt(k); if (v > 127) v -= 256; a[k] = v; }
+  const lat0 = C.Latitude[i], dy = 30.87, dx = 30.87 * Math.cos(lat0 * DEG);
+  return (x, z) => { // metres relative to the target tree's ground
+    const c = clamp(7 + x / dx, 0, n - 1.001), r = clamp(7 + z / dy, 0, n - 1.001);
+    const c0 = Math.floor(c), r0 = Math.floor(r), fc = c - c0, fr = r - r0;
+    const v00 = a[r0 * n + c0], v01 = a[r0 * n + c0 + 1], v10 = a[(r0 + 1) * n + c0], v11 = a[(r0 + 1) * n + c0 + 1];
+    // GLO-30 is a surface model; centre the patch so the target sits at 0
+    return lerp(lerp(v00, v01, fc), lerp(v10, v11, fc), fr) - a[7 * n + 7];
+  };
+}
+
+/* ================= Scene build ================= */
+let world = null;
+const ndviCol = v => { const c = new THREE.Color(); const t = clamp((v - 0.2) / 0.75, 0, 1); c.setHSL(t * 0.33, 0.85, 0.32 + (1 - Math.abs(t - .5) * 2) * 0.12); return c; };
+const growthH = t => 22 * Math.pow(1 - Math.exp(-0.16 * t), 1.4); // Chapman–Richards curve for plantation Aquilaria (approx.)
+const MEAN_H = C.Height_m.reduce((a, b) => a + b, 0) / N;
+function cohortDonors(i) { const a = C.Inoculation_Age_Months[i], out = []; for (let k = 0; k < N; k++) if (Math.abs(C.Inoculation_Age_Months[k] - a) <= 6 && k !== i) out.push(k); return out; }
+
+function disposeGroup(g) { g.traverse(o => { o.geometry && o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose()); }); }
+function buildScene(i) {
+  if (world) { scene.remove(world.group); disposeGroup(world.group); }
+  const r = rng(0x9e3779b9 ^ (i * 2654435761));
+  const q = $("quality").value === "high";
+  const group = new THREE.Group(); scene.add(group);
+  const lat0 = C.Latitude[i], lon0 = C.Longitude[i];
+  const terrain = makeTerrain(i);
+  const plotSide = Math.sqrt(C.Plot_Size_Acres[i] * 4046.86);
+  const block = Math.min(plotSide, 240), half = block / 2, buf = 90;
+  const wc = C.pub_worldcover_center[i];
+  const cover = C.pub_canopy_cover[i], p95 = Math.max(C.pub_chm_p95_m[i], 0), treeFrac = C.pub_worldcover_tree_frac[i];
+  const forestDensity = clamp(Math.max(cover, treeFrac * 0.8, C.pub_hansen_treecover2000[i] / 100 * 0.8), 0, 1);
+  const forestTop = p95 > 4 ? p95 : 14;
+  const stageV = $("stage").value, stage = stageV === "rec" ? null : +stageV;
+  const hScale = stage ? growthH(stage) / MEAN_H : 1;
+  // projected height keeps each tree's relative vigour from the dataset, but compressed so the cohort stays realistic
+  const projH = h => stage ? growthH(stage) * Math.pow(clamp(h / MEAN_H, 0.5, 1.8), 0.6) : h;
+  const projCr = (cr, h) => stage ? cr * Math.pow(projH(h) / h, 0.8) : cr;
+  const se = SEASONS[$("season").value];
+
+  // terrain mesh
+  const gSize = 1400, seg = q ? 140 : 70;
+  const geo = new THREE.PlaneGeometry(gSize, gSize, seg, seg); geo.rotateX(-Math.PI / 2);
+  const pos = geo.attributes.position;
+  for (let k = 0; k < pos.count; k++) pos.setY(k, terrain(pos.getX(k), pos.getZ(k)));
+  geo.computeVertexNormals();
+  const groundColor = { 20: 0x5a5a32, 30: 0x7a8a45, 40: 0x8a8448, 50: 0x6b6460, 60: 0x8a7e6a, 80: 0x2d5a78, 90: 0x3f6a5a }[wc] || se.ground;
+  const ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: groundColor })); ground.receiveShadow = true; group.add(ground);
+  // plantation soil patch draped on terrain
+  const pg = new THREE.PlaneGeometry(block + 6, block + 6, 24, 24); pg.rotateX(-Math.PI / 2);
+  const pp = pg.attributes.position; for (let k = 0; k < pp.count; k++) pp.setY(k, terrain(pp.getX(k), pp.getZ(k)) + 0.08);
+  pg.computeVertexNormals();
+  const soil = new THREE.Mesh(pg, new THREE.MeshLambertMaterial({ color: $("season").value === "monsoon" ? 0x3a2e1f : 0x4b3d2a, polygonOffset: true, polygonOffsetFactor: -1 })); soil.receiveShadow = true; group.add(soil);
+  const edgePts = []; for (let k = 0; k <= 64; k++) { const t = k / 16, s = Math.floor(t) % 4, f = t - Math.floor(t); const [x, z] = [[-half + f * block, -half], [half, -half + f * block], [half - f * block, half], [-half, half - f * block]][s]; edgePts.push(new THREE.Vector3(x, terrain(x, z) + 0.4, z)); }
+  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(edgePts), new THREE.LineBasicMaterial({ color: 0xd99a3e })));
+
+  // trees. kind 0 = target (given), 1 = simulated agarwood, 2 = simulated native, 3 = stump (harvested)
+  const trees = [];
+  const tH = projH(C.Height_m[i]), tCr = projCr(Math.sqrt(C.Crown_Area_m2[i] / Math.PI), C.Height_m[i]);
+  trees.push({ x: 0, z: 0, y: 0, h: tH, cr: tCr, ndvi: C.NDVI[i], bark: C.Bark_Anomaly_Index[i], kind: 0, src: C.Tree_ID[i] });
+  const donors = cohortDonors(i), sp = 3.0;
+  for (let x = -half + sp / 2; x < half; x += sp) for (let z = -half + sp / 2; z < half; z += sp) {
+    if (Math.hypot(x, z) < 2.2) continue;
+    if (r() < 0.06) continue; // gaps / mortality
+    const d = donors[Math.floor(r() * donors.length)];
+    const jx = x + (r() - .5) * .6, jz = z + (r() - .5) * .6;
+    const felled = stage === 10 && r() < 0.35;
+    trees.push({ x: jx, z: jz, y: terrain(jx, jz), h: felled ? 0.5 : projH(C.Height_m[d]), cr: projCr(Math.sqrt(C.Crown_Area_m2[d] / Math.PI), C.Height_m[d]), ndvi: C.NDVI[d], bark: C.Bark_Anomaly_Index[d], kind: felled ? 3 : 1, src: C.Tree_ID[d] });
+  }
+  const ringArea = (block + 2 * buf) ** 2 - block ** 2;
+  const nNative = Math.round(ringArea / 30 * forestDensity * (q ? 1 : 0.5));
+  for (let k = 0; k < nNative; k++) {
+    let x, z; do { x = (r() * 2 - 1) * (half + buf); z = (r() * 2 - 1) * (half + buf); } while ((Math.abs(x) < half + 4 && Math.abs(z) < half + 4) || Math.hypot(x + half + 12, z - half - 12) < 10);
+    const h = clamp(forestTop * (0.45 + 0.55 * Math.sqrt(r())) + gauss(r) * 1.5, 3, 50);
+    trees.push({ x, z, y: terrain(x, z), h, cr: clamp(1.4 + h * 0.17 + gauss(r) * .5, 1.2, 7) / (q ? 1 : 0.8), ndvi: clamp(0.78 + gauss(r) * 0.05, 0.5, 0.92), kind: 2 });
+  }
+  if (forestDensity < 0.2) for (let k = 0; k < 40; k++) { const x = (r() * 2 - 1) * (half + buf), z = (r() * 2 - 1) * (half + buf); if ((Math.abs(x) < half + 4 && Math.abs(z) < half + 4) || Math.hypot(x + half + 12, z - half - 12) < 10) continue; trees.push({ x, z, y: terrain(x, z), h: 6 + r() * 8, cr: 2 + r() * 2, ndvi: 0.7, kind: 2 }); }
+
+  const trunkG = new THREE.CylinderGeometry(0.5, 0.7, 1, 6); trunkG.translate(0, 0.5, 0);
+  const agarG = new THREE.ConeGeometry(1, 1, q ? 9 : 7); agarG.translate(0, 0.5, 0);
+  const nativeG = new THREE.IcosahedronGeometry(1, q ? 1 : 0);
+  const sim = trees.filter(t => t.kind === 1), nat = trees.filter(t => t.kind === 2), stumps = trees.filter(t => t.kind === 3);
+  const trunks = new THREE.InstancedMesh(trunkG, new THREE.MeshLambertMaterial({ color: 0x5a4330 }), sim.length + nat.length + stumps.length);
+  const agar = new THREE.InstancedMesh(agarG, swayMaterial(null, true), Math.max(sim.length, 1));
+  const native = new THREE.InstancedMesh(nativeG, swayMaterial(null, false), Math.max(nat.length, 1));
+  const m4 = new THREE.Matrix4(), qt = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), eu = new THREE.Euler();
+  let ti = 0;
+  sim.forEach((t, k) => {
+    const crownH = t.h * 0.72;
+    m4.compose(p.set(t.x, t.y, t.z), qt.identity(), s.set(Math.max(.05, t.h * .015), t.h * .4, Math.max(.05, t.h * .015))); trunks.setMatrixAt(ti++, m4);
+    m4.compose(p.set(t.x, t.y + t.h - crownH, t.z), qt.identity(), s.set(t.cr, crownH, t.cr)); agar.setMatrixAt(k, m4);
+  });
+  stumps.forEach(t => { m4.compose(p.set(t.x, t.y, t.z), qt.identity(), s.set(0.25, 0.5, 0.25)); trunks.setMatrixAt(ti++, m4); });
+  nat.forEach((t, k) => {
+    m4.compose(p.set(t.x, t.y, t.z), qt.identity(), s.set(t.h * .02 + .1, t.h * .55, t.h * .02 + .1)); trunks.setMatrixAt(ti++, m4);
+    m4.compose(p.set(t.x, t.y + t.h - t.cr * .8, t.z), qt.setFromEuler(eu.set(0, r() * 6.28, 0)), s.set(t.cr, t.cr * .9, t.cr)); native.setMatrixAt(k, m4);
+    t.tint = [r(), r(), r()];
+  });
+  trunks.count = ti; agar.count = sim.length; native.count = nat.length;
+  [trunks, agar, native].forEach(m => { m.instanceMatrix.needsUpdate = true; m.castShadow = q; m.receiveShadow = q; group.add(m); });
+
+  // target tree
+  const tg = trees[0];
+  const tGroup = new THREE.Group();
+  const dbhM = C.DBH_cm[i] / 100 * Math.pow(tH / C.Height_m[i], 0.9);
+  const tt = new THREE.Mesh(trunkG, new THREE.MeshLambertMaterial({ color: 0x6a4a2a })); tt.scale.set(Math.max(.06, dbhM * .7), tg.h * .4, Math.max(.06, dbhM * .7));
+  const tc = new THREE.Mesh(agarG, swayMaterial(0x4f8a3a, true));
+  tc.scale.set(tg.cr, tg.h * .72, tg.cr); tc.position.y = tg.h * .28;
+  tt.castShadow = tc.castShadow = q;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(tg.cr + 0.6, tg.cr + 1.1, 40), new THREE.MeshBasicMaterial({ color: 0xd99a3e, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.4;
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 40, 6), new THREE.MeshBasicMaterial({ color: 0xd99a3e, transparent: true, opacity: .55 }));
+  beacon.position.y = tg.h + 22;
+  tGroup.add(tt, tc, ring, beacon); group.add(tGroup);
+
+  const homeX = -half - 12, homeZ = half + 12;
+  const home = new THREE.Vector3(homeX, terrain(homeX, homeZ), homeZ);
+  const pad = new THREE.Mesh(new THREE.CircleGeometry(3, 24), new THREE.MeshBasicMaterial({ color: 0xe4ebe6 })); pad.rotation.x = -Math.PI / 2; pad.position.set(home.x, home.y + 0.25, home.z); group.add(pad);
+  const padH = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.2, 24), new THREE.MeshBasicMaterial({ color: 0xd99a3e })); padH.rotation.x = -Math.PI / 2; padH.position.set(home.x, home.y + 0.3, home.z); group.add(padH);
+  const fp = new THREE.Group(); group.add(fp);
+  const cell = 4, gridMap = new Map();
+  trees.forEach((t, k) => { const key = Math.floor(t.x / cell) + "," + Math.floor(t.z / cell); (gridMap.get(key) || gridMap.set(key, []).get(key)).push(k); });
+
+  world = { ground, i, lat0, lon0, block, half, buf, plotSide, trees, sim, nat, agar, native, tc, home, fp, gridMap, cell, wc, forestDensity, forestTop, terrain, ring, beacon, elev: C.pub_elev_m[i], stage, hScale, group };
+  colorFoliage();
+  const stTxt = stage ? `<span class="chip warn">year ${stage} projection</span> ` : "";
+  $("sceneTitle").textContent = `3D flight view · ${C.Tree_ID[i]}`;
+  $("sceneSub").innerHTML = `${stTxt}<span class="chip given">1 given tree</span> <span class="chip sim">${sim.length.toLocaleString()} sim. agarwood</span> <span class="chip pub">${nat.length.toLocaleString()} sim. native · public canopy</span>`;
+  resetDrone();
+  refreshConditions();
+  updatePlan();
+}
+
+/* foliage colours: season, life-cycle stress, camera band */
+let band = "RGB";
+function effNdvi(t) {
+  const c = env || conditions();
+  let v = t.ndvi + c.se.ndvi;
+  if (world.stage >= 7 && t.bark != null) v -= 0.12 * t.bark; // induced stress after inoculation lowers NDVI (matches dataset's negative correlation)
+  if (c.wx.rain > 0) v -= 0.02; // wet leaves
+  return clamp(v, -0.2, 0.95);
+}
+function colorFoliage() {
+  const w = world; if (!w) return;
+  const se = SEASONS[$("season").value], col = new THREE.Color();
+  w.sim.forEach((t, k) => {
+    if (band === "NDVI") col.copy(ndviCol(effNdvi(t)));
+    else { const stress = w.stage >= 7 ? t.bark * 0.5 : 0; col.setHSL(0.27 + (t.ndvi - .6) * .12 + se.hue - stress * 0.12, clamp(0.45 + se.sat - stress * 0.1, 0.1, 1), 0.22 + t.ndvi * 0.12 + se.light + stress * 0.08); }
+    w.agar.setColorAt(k, col);
+  });
+  w.nat.forEach((t, k) => {
+    if (band === "NDVI") col.copy(ndviCol(effNdvi(t)));
+    else col.setHSL(0.26 + t.tint[0] * 0.06 + se.hue, clamp(0.4 + t.tint[1] * .2 + se.sat, 0.1, 1), 0.17 + t.tint[2] * 0.1 + se.light);
+    w.native.setColorAt(k, col);
+  });
+  const t0 = w.trees[0];
+  w.tc.material.color.copy(band === "NDVI" ? ndviCol(effNdvi(t0)) : new THREE.Color().setHSL(0.27 + (t0.ndvi - .6) * .12 + se.hue - (w.stage >= 7 ? t0.bark * 0.06 : 0), 0.5 + se.sat, 0.26 + t0.ndvi * 0.1 + se.light));
+  [w.agar, w.native].forEach(m => m.instanceColor && (m.instanceColor.needsUpdate = true));
+}
+$("btnBand").onclick = () => { band = band === "RGB" ? "NDVI" : "RGB"; $("btnBand").textContent = `Camera: ${band}`; $("camLabel").textContent = `${band} · nadir · simulated`; colorFoliage(); };
+
+/* environment: sky, sun, fog, rain, lightning */
+const rainN = 9000, rainGeo = new THREE.BufferGeometry(), rainPos = new Float32Array(rainN * 6);
+rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPos, 3));
+const rain = new THREE.LineSegments(rainGeo, new THREE.LineBasicMaterial({ color: 0xc9d6de, transparent: true, opacity: 0.45 }));
+rain.frustumCulled = false; scene.add(rain);
+for (let k = 0; k < rainN; k++) { rainPos[k * 6] = (R0() - .5) * 160; rainPos[k * 6 + 1] = R0() * 90; rainPos[k * 6 + 2] = (R0() - .5) * 160; }
+let env = null, flash = 0, nextBolt = 8;
+function applyEnvironment(c) {
+  env = c;
+  const q = $("quality").value === "high";
+  R3.setPixelRatio(Math.min(devicePixelRatio, q ? 2 : 1));
+  R3.shadowMap.enabled = q; sun.castShadow = q;
+  const elevA = Math.sin(Math.PI * (c.h - 6) / 12) * c.se.sunMax * DEG;
+  const az = Math.PI * (c.h - 6) / 12; // east (+x) in the morning → west (−x) in the evening, sun to the south
+  const d = 600;
+  sun.position.set(Math.cos(az) * Math.cos(elevA) * d, Math.max(Math.sin(elevA), 0.05) * d, Math.cos(elevA) * d * 0.35);
+  const low = clamp(1 - elevA / (25 * DEG), 0, 1);
+  sun.color.setHSL(0.1, 0.6 * low + 0.2, 0.75 + 0.1 * (1 - low));
+  sun.intensity = 0.95 * c.wx.light * clamp(Math.sin(elevA) * 1.6, 0.2, 1);
+  hemi.intensity = 0.55 + 0.25 * c.wx.light;
+  const sky = new THREE.Color(c.se.sky).lerp(new THREE.Color(0x8a9399), c.wx.sky).lerp(new THREE.Color(0xe0a070), low * 0.35 * (1 - c.wx.sky));
+  scene.background = sky; scene.fog.color.copy(sky);
+  scene.fog.near = Math.min(c.wx.vis * 0.15, 300); scene.fog.far = c.wx.vis + 150;
+  rain.visible = c.wx.rain > 0;
+  rain.geometry.setDrawRange(0, Math.round(clamp(c.wx.rain / 18, 0.15, 1) * rainN * (q ? 1 : 0.4)) * 2);
+  swayU.uAmp.value = clamp(c.U * 0.035, 0.01, 0.6); swayU.uGust.value = c.wx.gust;
+  swayU.uDir.value.set(c.wdir.x, c.wdir.z);
+  if (world) { colorFoliage(); if (!({ 20: 1, 30: 1, 40: 1, 50: 1, 60: 1, 80: 1, 90: 1 })[world.wc]) world.ground.material.color.setHex(c.se.ground); }
+}
+["season", "weather", "tod", "wind", "windDir", "model"].forEach(id => $(id).addEventListener("input", () => { refreshConditions(); if (!st || st.done) updatePlan(); }));
+$("stage").onchange = () => { if (sel >= 0) buildScene(sel); };
+$("quality").onchange = () => { if (sel >= 0) buildScene(sel); };
+
+/* canopy surface (simulated LiDAR / multispectral lookup) */
+function surfaceAt(x, z) {
+  const w = world; let top = w.terrain(x, z), hAbove = 0, nd = { 10: .32, 20: .45, 30: .5, 40: .4, 50: .12, 60: .1, 80: -.2, 90: .45 }[w.wc] ?? .3, target = false;
+  if (Math.abs(x) < w.half + 3 && Math.abs(z) < w.half + 3) nd = 0.18;
+  const cx = Math.floor(x / w.cell), cz = Math.floor(z / w.cell);
+  for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) {
+    const l = w.gridMap.get((cx + a) + "," + (cz + b)); if (!l) continue;
+    for (const k of l) { const t = w.trees[k]; if (t.kind === 3) continue; const d = Math.hypot(t.x - x, t.z - z); if (d < t.cr) { const h = t.h * (1 - 0.35 * (d / t.cr) ** 2); if (t.y + h > top) { top = t.y + h; hAbove = h; nd = effNdvi(t); target = t.kind === 0; } } }
+  }
+  return { top, h: hAbove, ndvi: nd, target };
+}
+function canopyTopNear(x, z, rad) { // highest obstacle within rad metres
+  const w = world; let top = w.terrain(x, z);
+  const c0 = Math.floor((x - rad - 8) / w.cell), c1 = Math.floor((x + rad + 8) / w.cell), r0 = Math.floor((z - rad - 8) / w.cell), r1 = Math.floor((z + rad + 8) / w.cell);
+  for (let a = c0; a <= c1; a++) for (let b = r0; b <= r1; b++) { const l = w.gridMap.get(a + "," + b); if (!l) continue; for (const k of l) { const t = w.trees[k]; if (Math.hypot(t.x - x, t.z - z) < rad + t.cr) top = Math.max(top, t.y + t.h); } }
+  return top;
+}
+// line of sight: does any crown (approximated as a sphere) block the segment a→b?
+function losBlocker(a, b) {
+  const w = world, dir = new THREE.Vector3().subVectors(b, a), L = dir.length(); dir.divideScalar(L);
+  const seen = new Set();
+  for (let s = 0; s <= L; s += 2) {
+    const px = a.x + dir.x * s, pz = a.z + dir.z * s, cx = Math.floor(px / w.cell), cz = Math.floor(pz / w.cell);
+    for (let u = -2; u <= 2; u++) for (let v = -2; v <= 2; v++) {
+      const l = w.gridMap.get((cx + u) + "," + (cz + v)); if (!l) continue;
+      for (const k of l) {
+        if (seen.has(k)) continue; seen.add(k); const t = w.trees[k]; if (t.kind === 0 || t.kind === 3) continue;
+        const cy = t.kind === 1 ? t.y + t.h - t.h * 0.72 * 0.4 : t.y + t.h - t.cr * 0.8, rad = t.kind === 1 ? t.cr * 0.75 : t.cr * 0.9;
+        const ox = t.x - a.x, oy = cy - a.y, oz = t.z - a.z, proj = ox * dir.x + oy * dir.y + oz * dir.z;
+        if (proj < 0 || proj > L - 1.0) continue;
+        const d2 = ox * ox + oy * oy + oz * oz - proj * proj;
+        if (d2 < rad * rad) return { t, dist: proj };
+      }
+    }
+  }
+  return null;
+}
+
+/* ================= Drone ================= */
+const droneRoot = new THREE.Group(), droneYaw = new THREE.Group(); droneRoot.add(droneYaw); scene.add(droneRoot);
+{
+  const bodyM = new THREE.MeshLambertMaterial({ color: 0x2b2f33 }), armM = new THREE.MeshLambertMaterial({ color: 0x3b4045 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.28, 0.5), bodyM); body.castShadow = true; droneYaw.add(body);
+  const gim = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.18, 0.22), new THREE.MeshLambertMaterial({ color: 0x111111 })); gim.position.set(0.25, -0.2, 0); droneYaw.add(gim);
+  droneYaw.userData.props = [];
+  for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.06, 0.06), armM); arm.position.set(sx * .3, 0.05, sz * .3); arm.rotation.y = -Math.atan2(sz, sx); droneYaw.add(arm);
+    const prop = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.02, 16), new THREE.MeshBasicMaterial({ color: 0xcfd6da, transparent: true, opacity: .35 }));
+    prop.position.set(sx * .55, 0.12, sz * .55); droneYaw.add(prop); droneYaw.userData.props.push(prop);
+  }
+  const led = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff3b2f })); led.position.set(-.45, 0, 0); droneYaw.add(led); droneYaw.userData.led = led;
+}
+const camFrustum = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xd99a3e, transparent: true, opacity: .7 })); scene.add(camFrustum);
+const trail = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x6fb3d9 })); scene.add(trail);
+const pathLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: 0xe4ebe6, dashSize: 4, gapSize: 3, transparent: true, opacity: .55 })); scene.add(pathLine);
+const losLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x6cc28a })); losLine.visible = false; scene.add(losLine);
+
+let st = null;
+const trailPts = [], lidarHist = [], ndviHist = [], photos = [], flog = [];
+const logEl = $("log");
+const mmss = t => `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+function logMsg(m, cls = "") { const d = document.createElement("div"); d.className = cls; d.innerHTML = `<span class="t">T+${mmss(st ? st.t : 0)}</span> ${m}`; d.title = d.textContent; logEl.prepend(d); }
+function toLatLon(x, z) { const w = world; return [w.lat0 - z / 110574, w.lon0 + x / (111320 * Math.cos(w.lat0 * DEG))]; }
+
+function planWaypoints() {
+  const w = world, alt = +$("alt").value, ovl = +$("ovl").value / 100;
+  const footW = 2 * alt * Math.tan(HFOV / 2), footH = 2 * alt * Math.tan(VFOV / 2);
+  const spacing = footW * (1 - ovl);
+  const lines = Math.max(1, Math.ceil(w.block / spacing) + 1);
+  const span = (lines - 1) * spacing, x0 = -span / 2;
+  const wps = [{ x: w.home.x, z: w.home.z, agl: 0, kind: "home" }, { x: w.home.x, z: w.home.z, agl: alt, kind: "climb" }];
+  const zA = -w.half - footH * .3, zB = w.half + footH * .3;
+  for (let k = 0; k < lines; k++) { const x = x0 + k * spacing; const a = k % 2 ? zB : zA, b = k % 2 ? zA : zB; wps.push({ x, z: a, agl: alt, kind: "line-start", line: k }); wps.push({ x, z: b, agl: alt, kind: "line-end", line: k }); }
+  if ($("inspect").value === "1") wps.push({ x: 0, z: 0, agl: alt, kind: "inspect" });
+  wps.push({ x: w.home.x, z: w.home.z, agl: alt, kind: "rth" }, { x: w.home.x, z: w.home.z, agl: 0, kind: "land" });
+  let dist = 0; for (let k = 1; k < wps.length; k++) dist += Math.hypot(wps[k].x - wps[k - 1].x, wps[k].agl - wps[k - 1].agl, wps[k].z - wps[k - 1].z);
+  return { wps, alt, footW, footH, spacing, lines, dist, frontOvl: 0.75 };
+}
+function updatePlan() {
+  if (!world) return;
+  const pl = planWaypoints(), spd = +$("spd").value, c = env || conditions();
+  const tmin = pl.dist / spd / 60 + 1.5 + ($("inspect").value === "1" ? 1.5 : 0);
+  const gsdCm = (pl.footW / 5280) * 100;
+  const cap = c.md.wh * c.capFactor, pEst = c.md.pHover * Math.sqrt(1.225 / c.rho) * (1 + 0.012 * c.U ** 1.4);
+  const endur = cap * 0.8 / pEst * 60;
+  $("planInfo").innerHTML = `Block <b>${world.block.toFixed(0)} × ${world.block.toFixed(0)} m</b>${world.plotSide > world.block + 1 ? ` (of a ${world.plotSide.toFixed(0)} m, ${C.Plot_Size_Acres[world.i]}-acre plot)` : ""} · ${pl.lines} lines, ${pl.spacing.toFixed(1)} m apart · footprint ${pl.footW.toFixed(0)} × ${pl.footH.toFixed(0)} m · GSD ${gsdCm.toFixed(2)} cm/px · ${(pl.dist / 1000).toFixed(2)} km, about ${tmin.toFixed(1)} min. Estimated endurance in these conditions: <b>${endur.toFixed(0)} min</b>. ` +
+    (pl.alt > 120 ? `<span class="chip warn">above 120 m</span>` : `<span class="chip pub">within DGCA 120 m AGL</span>`);
+  const pts = pl.wps.map(p => new THREE.Vector3(p.x, world.terrain(p.x, p.z) + Math.max(p.agl, .5), p.z));
+  pathLine.geometry.dispose(); pathLine.geometry = new THREE.BufferGeometry().setFromPoints(pts); pathLine.computeLineDistances();
+}
+["alt", "spd", "ovl"].forEach(id => $(id).oninput = () => { $(id + "V").textContent = $(id).value + (id === "ovl" ? " %" : id === "alt" ? " m" : " m/s"); if (!st || st.done) updatePlan(); });
+$("inspect").onchange = () => { if (!st || st.done) updatePlan(); };
+
+function resetDrone() {
+  st = null;
+  const md = MODELS[$("model").value];
+  droneRoot.scale.setScalar(md.size);
+  droneRoot.position.copy(world.home).add(new THREE.Vector3(0, 0.35 * md.size, 0)); droneRoot.quaternion.identity(); droneYaw.rotation.set(0, 0, 0);
+  trailPts.length = 0; trail.geometry.dispose(); trail.geometry = new THREE.BufferGeometry();
+  world.fp.clear(); lidarHist.length = 0; ndviHist.length = 0; logEl.innerHTML = ""; photos.length = 0; flog.length = 0;
+  losLine.visible = false; $("hudLos").hidden = true; $("camCount").textContent = "0 img";
+  $("hudMode").textContent = "PRE-FLIGHT · ON PAD"; $("hudRec").hidden = true; $("progBar").style.width = "0%";
+  $("btnPause").disabled = true; $("btnRTH").disabled = true; $("btnFly").disabled = false; $("btnPause").textContent = "Pause";
+  $("targetOut").innerHTML = `<dt>Target</dt><dd>${C.Tree_ID[world.i]}</dd><dt>Status</dt><dd>not yet imaged</dd>` + (world.stage ? `<dt>Shown size</dt><dd>year ${world.stage} projection</dd>` : "");
+  telemetry();
+  logMsg(`Scene ready for ${C.Tree_ID[world.i]} at ${C.Latitude[world.i].toFixed(6)}, ${C.Longitude[world.i].toFixed(6)}, ${world.elev.toFixed(0)} m elevation. ${world.sim.length.toLocaleString()} simulated agarwood on a 3 m grid (sizes from same-age dataset rows${world.stage ? `, scaled to year ${world.stage}` : ""}), ${world.nat.length.toLocaleString()} simulated native trees (top height ${world.forestTop.toFixed(0)} m from public canopy data).`);
+}
+
+function startFlight() {
+  if (!world) return;
+  resetDrone();
+  const c = refreshConditions(), v = verdict(c), md = c.md;
+  const pl = planWaypoints();
+  st = { pl, wi: 1, t: 0, dist: 0, paused: false, done: false, phase: "TAKEOFF", lastPhoto: -1e9, photoCount: 0, targetImgs: 0, targetFirst: null, ndviReads: [], lidarTargetMax: 0,
+    covered: new Set(), rth: false, vel: new THREE.Vector3(), aCtrl: new THREE.Vector3(), yaw: 0, wh: md.wh * c.capFactor, whCap: md.wh * c.capFactor, power: 0, air: 0,
+    gustSeed: [R0() * 9, R0() * 9, R0() * 9], obsLogT: -99, losBlocks: 0, moves: 0, oblique: 0, insp: null, stuckT: 0, moisture: 0, lastLos: -1, boltLogged: false };
+  $("btnPause").disabled = false; $("btnRTH").disabled = false; $("btnFly").disabled = true;
+  logMsg(`Pre-flight (simulated): ${md.name}, ${c.wx.name}, ${c.tC.toFixed(0)} °C, wind ${c.U} m/s. Usable battery ${Math.round(c.capFactor * 100)} %. Verdict ${["GO", "CAUTION", "NO-GO"][v.level]}.`, v.level ? "warn" : "");
+  if (v.level === 2) logMsg("Launching against a NO-GO verdict to show what happens. A real pilot would not fly.", "warn");
+  logMsg(`Mission: ${pl.lines} lines at ${pl.alt} m AGL, ${$("spd").value} m/s, ${$("ovl").value} % side / 75 % front overlap${$("inspect").value === "1" ? ", then close inspection orbit of the target" : ""}.`);
+}
+$("btnFly").onclick = startFlight;
+$("btnPause").onclick = () => { if (!st || st.done) return; st.paused = !st.paused; $("btnPause").textContent = st.paused ? "Resume" : "Pause"; };
+$("btnRTH").onclick = () => triggerRTH("Pilot pressed Return home.");
+function triggerRTH(reason) {
+  if (!st || st.done || st.rth) return; st.rth = true; st.insp = null; losLine.visible = false; $("hudLos").hidden = true;
+  st.wi = st.pl.wps.findIndex(w => w.kind === "rth"); st.phase = "RETURN TO HOME";
+  logMsg(reason + " Returning to home point.", "warn");
+}
+
+/* wind at the drone: mean (power-law shear) + gusts */
+function windAt(t, agl) {
+  const c = env, s = st.gustSeed, U = c.U * Math.pow(clamp(agl, 2, 150) / 10, 0.2);
+  const gx = Math.sin(t * 0.31 + s[0]) * 0.6 + Math.sin(t * 1.13 + s[1]) * 0.3 + Math.sin(t * 2.7 + s[2]) * 0.1;
+  const gz = Math.sin(t * 0.27 + s[1]) * 0.6 + Math.sin(t * 0.93 + s[2]) * 0.3 + Math.sin(t * 3.1 + s[0]) * 0.1;
+  const gy = Math.sin(t * 0.8 + s[2]) * 0.25;
+  const gust = c.wx.gust * U * (1 + (c.wKey === "storm" ? Math.max(0, Math.sin(t * 0.05 + s[0])) * 1.5 : 0));
+  return new THREE.Vector3(c.wdir.x * U + gx * gust, gy * gust, c.wdir.z * U + gz * gust);
+}
+
+function setpoint() {
+  const w = world, pl = st.pl, wp = pl.wps[st.wi];
+  if (st.insp) return st.insp.sp.clone();
+  const ground = w.terrain(wp.x, wp.z);
+  return new THREE.Vector3(wp.x, ground + wp.agl, wp.z);
+}
+
+function step(dt) {
+  if (!st || st.done || st.paused) return;
+  const w = world, c = env, md = c.md, pl = st.pl, wp = pl.wps[st.wi];
+  const p = droneRoot.position, mount = 0.35 * md.size;
+  st.t += dt;
+  // ---- setpoint, inspection logic, obstacle clearance ----
+  let sp = setpoint();
+  if (wp.kind === "inspect" && !st.insp && !st.rth) {
+    const d2 = Math.hypot(p.x - sp.x, p.z - sp.z);
+    if (d2 < 3) startInspection();
+    else sp.y = Math.max(sp.y, p.y);
+  }
+  if (st.insp) { inspectionStep(dt); sp = st.insp ? st.insp.sp.clone() : setpoint(); }
+  const close = !!st.insp;
+  const v = st.vel;
+  const hv = Math.hypot(v.x, v.z), look = clamp(hv * 2.5, 4, 25);
+  const ax = hv > 0.5 ? v.x / hv : 0, az = hv > 0.5 ? v.z / hv : 0;
+  let obs = canopyTopNear(p.x, p.z, close ? 1.5 : 4);
+  for (let s = 4; s <= look; s += 4) obs = Math.max(obs, canopyTopNear(p.x + ax * s, p.z + az * s, close ? 1.5 : 4));
+  const clearance = close ? 2.5 : 6;
+  if (wp.kind !== "land" && wp.kind !== "home" && sp.y < obs + clearance && p.y - mount > w.terrain(p.x, p.z) + 1) {
+    if (st.t - st.obsLogT > 12 && obs + clearance - sp.y > 2) { logMsg(`Obstacle avoidance: canopy reaches ${(obs - w.terrain(p.x, p.z)).toFixed(0)} m above ground ahead. Climbing ${(obs + clearance - sp.y).toFixed(0)} m to keep ${clearance} m clearance.`, "warn"); st.obsLogT = st.t; }
+    sp.y = obs + clearance;
+  }
+  sp.y += mount;
+  // ---- guidance: desired velocity ----
+  const to = new THREE.Vector3().subVectors(sp, p), dist = to.length();
+  const vmax = wp.kind === "climb" ? 4 : wp.kind === "land" ? 2 : st.insp ? 2.5 : (wp.kind === "rth" || wp.kind === "inspect" || wp.kind === "line-start") ? Math.min(12, md.vmax) : +$("spd").value;
+  const vd = dist > 1e-3 ? to.clone().multiplyScalar(Math.min(vmax, Math.sqrt(2 * 2.5 * dist)) / dist) : new THREE.Vector3();
+  // ---- physics: drag against moving air, rain load, controller with tilt limit ----
+  const agl = p.y - mount - w.terrain(p.x, p.z);
+  const wind = windAt(st.t, agl);
+  const vAir = new THREE.Vector3().subVectors(v, wind), air = vAir.length();
+  const mass = md.mass * (1 + 0.004 * c.wx.rain);
+  const k = 0.5 * c.rho * md.CdA * (1 + 0.006 * c.wx.rain) / mass;
+  const aDrag = vAir.clone().multiplyScalar(-k * air);
+  const aRain = c.wx.rain * 0.004; // downward momentum of rain (small)
+  const aCmd = new THREE.Vector3().subVectors(vd, v).multiplyScalar(1.8).sub(aDrag);
+  aCmd.y += aRain;
+  const hMax = G * Math.tan(md.tilt * DEG), hC = Math.hypot(aCmd.x, aCmd.z);
+  if (hC > hMax) { aCmd.x *= hMax / hC; aCmd.z *= hMax / hC; }
+  aCmd.y = clamp(aCmd.y, -4, 5);
+  const acc = aCmd.clone().add(aDrag); acc.y -= aRain;
+  v.addScaledVector(acc, dt);
+  const prev = p.clone();
+  p.addScaledVector(v, dt);
+  const gnd = w.terrain(p.x, p.z) + mount;
+  if (p.y < gnd) { p.y = gnd; v.y = Math.max(0, v.y); }
+  st.dist += Math.hypot(p.x - prev.x, p.z - prev.z) + Math.abs(p.y - prev.y);
+  st.aCtrl.copy(aCmd); st.air = air;
+  // attitude: tilt into the commanded horizontal acceleration, yaw toward travel or toward target in inspection
+  const tilt = Math.atan(Math.hypot(aCmd.x, aCmd.z) / G);
+  const axis = new THREE.Vector3(aCmd.z, 0, -aCmd.x); // tilting toward +x (east) needs rotation about −z
+  if (axis.lengthSq() > 1e-6) droneRoot.quaternion.setFromAxisAngle(axis.normalize(), tilt); else droneRoot.quaternion.identity();
+  let wantYaw = st.yaw;
+  if (st.insp) wantYaw = Math.atan2(-p.x, p.z); else if (Math.hypot(vd.x, vd.z) > 1) wantYaw = Math.atan2(vd.x, -vd.z);
+  let dy = ((wantYaw - st.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  st.yaw += clamp(dy, -1.6 * dt, 1.6 * dt);
+  droneYaw.rotation.y = -st.yaw + Math.PI / 2;
+  // ---- power & battery ----
+  const T = mass * Math.sqrt((G + aCmd.y) ** 2 + aCmd.x ** 2 + aCmd.z ** 2);
+  const P = md.pHover * Math.sqrt(1.225 / c.rho) * Math.pow(T / (md.mass * G), 1.5) * (1 + (c.tC < 10 ? 0.05 : 0));
+  st.power = P; st.wh -= P * dt / 3600;
+  const bat = st.wh / md.wh * 100;
+  if (bat < 25 && !st.rth) triggerRTH(`Battery at ${bat.toFixed(0)} %.`);
+  // ---- hazards ----
+  if (c.wKey === "storm" && agl > 2 && !st.boltLogged) { nextBolt -= dt; if (nextBolt < 0) { flash = 0.18; nextBolt = 6 + R0() * 10; st.boltLogged = true; triggerRTH("Lightning within 10 km (simulated)."); } }
+  if (c.wx.rain > 0 && !md.ip && agl > 2) { st.moisture += dt * c.wx.rain / 18; if (st.moisture > 120 && !st.rth) triggerRTH("Moisture in the motors (simulated, no IP rating): ESC warning."); }
+  const gs = Math.hypot(v.x, v.z), want = Math.hypot(vd.x, vd.z);
+  if (want > 2 && gs < 0.6 && agl > 5) { st.stuckT += dt; if (st.stuckT > 8 && !st.rth) triggerRTH(`Cannot make headway into ${Math.hypot(wind.x, wind.z).toFixed(0)} m/s wind at max tilt.`); } else st.stuckT = Math.max(0, st.stuckT - dt);
+  // ---- waypoint progress ----
+  if (!st.insp && dist < (wp.kind === "line-end" || wp.kind === "line-start" ? 2.5 : 1.0)) {
+    if (wp.kind === "climb") logMsg(`Reached ${pl.alt} m AGL. Heading to line 1.`);
+    if (wp.kind === "line-start") { st.phase = `SURVEY · LINE ${wp.line + 1}/${pl.lines}`; $("hudRec").hidden = false; }
+    if (wp.kind === "line-end") { $("hudRec").hidden = true; if (wp.line === pl.lines - 1) logMsg(`Survey lines complete. ${st.photoCount} nadir images.`); }
+    if (wp.kind === "rth") st.phase = "LANDING";
+    if (wp.kind === "land") { finish(); return; }
+    if (wp.kind !== "inspect") st.wi++;
+    const nx = pl.wps[st.wi];
+    if (nx && nx.kind === "line-start" && wp.kind === "climb") st.phase = "TRANSIT";
+    if (nx && nx.kind === "inspect") st.phase = "TRANSIT TO TARGET";
+  }
+  if (st.wi === 1) st.phase = "TAKEOFF · CLIMB";
+  const recording = pl.wps[st.wi] && pl.wps[st.wi].kind === "line-end" && !st.rth;
+  if (recording && st.dist - st.lastPhoto >= pl.footH * (1 - pl.frontOvl)) { st.lastPhoto = st.dist; capture(agl); }
+  // ---- sensors ----
+  const s = surfaceAt(p.x, p.z);
+  const dropout = R0() < c.wx.rain * 0.022 + (c.wKey === "fog" ? 0.05 : 0);
+  const lidar = agl > 1 && !dropout ? s.h + (R0() - .5) * 0.3 : NaN;
+  const ndvi = clamp(s.ndvi + gauss(R0) * (0.015 + c.wx.rain * 0.003), -1, 1);
+  if (Math.floor(st.t * 4) !== Math.floor((st.t - dt) * 4)) {
+    lidarHist.push(lidar); ndviHist.push(ndvi); if (lidarHist.length > 240) { lidarHist.shift(); ndviHist.shift(); }
+    const [la, lo] = toLatLon(p.x, p.z);
+    flog.push([st.t.toFixed(2), la.toFixed(7), lo.toFixed(7), agl.toFixed(2), gs.toFixed(2), air.toFixed(2), Math.hypot(wind.x, wind.z).toFixed(2), (tilt / DEG).toFixed(1), (((st.yaw / DEG) % 360 + 360) % 360).toFixed(1), P.toFixed(0), bat.toFixed(2), isNaN(lidar) ? "" : lidar.toFixed(2), ndvi.toFixed(3), s.target ? 1 : 0, st.lastLos, c.wKey, c.wx.rain, c.tC.toFixed(1), st.phase]);
+  }
+  if (s.target && agl > 5) { st.ndviReads.push(ndvi); if (!isNaN(lidar)) st.lidarTargetMax = Math.max(st.lidarTargetMax, lidar); }
+  if (!st.insp) $("hudMode").textContent = st.phase;
+}
+
+/* close inspection: orbit the target, keep line of sight, move when a crown blocks it */
+function startInspection() {
+  const w = world, t0 = w.trees[0], base = w.terrain(0, 0);
+  const R = clamp(t0.cr * 2.5 + 6, 8, 16);
+  const ringTop = canopyTopNear(0, 0, R + 1);
+  const hI = Math.max(base + t0.h + 5, ringTop + 2.5);
+  st.insp = { R, hI, ang: Math.atan2(droneRoot.position.x, droneRoot.position.z), swept: 0, dy: 0, sp: new THREE.Vector3(), state: "descend", lastCheck: 0, lastShot: -99, blockedAt: null, tries: 0 };
+  st.phase = "INSPECT · DESCEND";
+  logMsg(`Close inspection: orbit radius ${R.toFixed(0)} m at ${(hI - base).toFixed(0)} m above the target's ground. Gimbal locked on the crown.`);
+}
+function inspectionStep(dt) {
+  const I = st.insp, w = world, t0 = w.trees[0], base = w.terrain(0, 0), p = droneRoot.position, mount = 0.35 * MODELS[$("model").value].size;
+  const aim = new THREE.Vector3(0, base + t0.h * 0.62, 0);
+  const at = (ang, dy) => new THREE.Vector3(I.R * Math.sin(ang), I.hI + dy, I.R * Math.cos(ang));
+  const here = new THREE.Vector3(p.x, p.y - mount, p.z);
+  if (I.state === "descend") {
+    I.sp.copy(at(I.ang, I.dy));
+    if (here.distanceTo(I.sp) < 1.2) { I.state = "orbit"; st.phase = "INSPECT · ORBIT"; }
+  } else if (I.state === "orbit") {
+    // check line of sight every 0.25 s of sim time
+    if (st.t - I.lastCheck > 0.25) {
+      I.lastCheck = st.t;
+      const b = losBlocker(here, aim);
+      st.lastLos = b ? 0 : 1;
+      setLos(here, aim, !b);
+      if (b) {
+        st.losBlocks++;
+        // search nearby viewpoints: sideways along the orbit first, then higher
+        let best = null;
+        // the orbit only moves forward, so look ahead along it (cheapest first: small turn, then climb)
+        const opts = []; for (const dyy of [0, 2, 4, 6, 9, 12]) for (const da of [10, 20, 35, 50, 70]) opts.push([da / 10 + dyy / 2, da, dyy]);
+        opts.sort((a, b) => a[0] - b[0]);
+        for (const [, da, dyy] of opts) { const cand = at(I.ang + da * DEG, I.dy + dyy); if (cand.y < canopyTopNear(cand.x, cand.z, 1.5) + 2) continue; if (!losBlocker(cand, aim)) { best = { da, dyy, cand }; break; } }
+        const kind = b.t.kind === 1 ? `simulated agarwood crown (${b.t.h.toFixed(1)} m tall)` : `native tree crown (${b.t.h.toFixed(0)} m tall)`;
+        if (best) {
+          I.ang += best.da * DEG; I.swept += best.da * DEG; I.dy += best.dyy; I.state = "reposition"; st.moves++; st.phase = "INSPECT · REPOSITION";
+          logMsg(`Line of sight to target blocked by a ${kind} ${b.dist.toFixed(1)} m from the camera. Skipping ${best.da}° ahead on the orbit${best.dyy ? ` and climbing ${best.dyy} m` : ""} to a clear viewpoint.`, "warn");
+        } else { I.ang += 25 * DEG; I.swept += 25 * DEG; I.dy += 3; st.moves++; I.state = "reposition"; logMsg(`Line of sight blocked by a ${kind}; no clear view nearby. Climbing 3 m and moving on.`, "warn"); }
+      } else if (st.t - I.lastShot > 2.5) {
+        I.lastShot = st.t; st.oblique++; st.targetImgs++;
+        const [la, lo] = toLatLon(here.x, here.z);
+        photos.push([`O${st.oblique}`, st.t.toFixed(2), la.toFixed(7), lo.toFixed(7), (here.y - w.terrain(here.x, here.z)).toFixed(1), "", "", 1, "oblique"]);
+        if (!st.targetFirst) st.targetFirst = st.t;
+      }
+    }
+    const omega = 2.2 / I.R; I.ang += omega * dt; I.swept += omega * dt;
+    I.sp.copy(at(I.ang, I.dy));
+    if (I.swept >= Math.PI * 2) { logMsg(`Inspection orbit done: ${st.oblique} oblique images with a clear view, ${st.moves} repositions to get around blocking crowns.`, "hit"); st.insp = null; st.lastLos = -1; losLine.visible = false; $("hudLos").hidden = true; st.wi++; st.phase = "RETURN TO HOME"; return; }
+  } else if (I.state === "reposition") {
+    I.sp.copy(at(I.ang, I.dy));
+    setLos(here, aim, !losBlocker(here, aim));
+    if (here.distanceTo(I.sp) < 1.0) { I.state = "orbit"; st.phase = "INSPECT · ORBIT"; }
+  }
+  $("hudMode").textContent = st.phase;
+}
+function setLos(a, b, clear) {
+  losLine.geometry.dispose(); losLine.geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
+  losLine.material.color.set(clear ? 0x6cc28a : 0xe0614f); losLine.visible = true;
+  const h = $("hudLos"); h.hidden = false; h.textContent = clear ? "TARGET IN VIEW" : "VIEW BLOCKED"; h.style.color = clear ? "var(--ok)" : "var(--crit)";
+}
+
+function capture(agl) {
+  const w = world, p = droneRoot.position; st.photoCount++;
+  const fw = 2 * agl * Math.tan(HFOV / 2), fh = 2 * agl * Math.tan(VFOV / 2);
+  const hit = Math.abs(p.x) < fw / 2 && Math.abs(p.z) < fh / 2;
+  const [la, lo] = toLatLon(p.x, p.z);
+  photos.push([st.photoCount, st.t.toFixed(2), la.toFixed(7), lo.toFixed(7), agl.toFixed(1), fw.toFixed(1), fh.toFixed(1), hit ? 1 : 0, "nadir"]);
+  for (let gx = Math.ceil((p.x - fw / 2 + w.half) / 6); gx * 6 - w.half <= p.x + fw / 2; gx++) for (let gz = Math.ceil((p.z - fh / 2 + w.half) / 6); gz * 6 - w.half <= p.z + fh / 2; gz++) if (gx >= 0 && gz >= 0 && gx * 6 <= w.block && gz * 6 <= w.block) st.covered.add(gx + "," + gz);
+  const g = new THREE.BufferGeometry().setFromPoints([[-1, -1], [1, -1], [1, 1], [-1, 1], [-1, -1]].map(([a, b]) => { const x = p.x + a * fw / 2, z = p.z + b * fh / 2; return new THREE.Vector3(x, w.terrain(x, z) + 0.8, z); }));
+  w.fp.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: hit ? 0xd99a3e : 0x6fb3d9, transparent: true, opacity: hit ? .8 : .22 })));
+  if (hit) { st.targetImgs++; if (!st.targetFirst) { st.targetFirst = st.t; logMsg(`Target ${C.Tree_ID[w.i]} in frame (image #${st.photoCount}).`, "hit"); } }
+  $("camCount").textContent = `${st.photoCount + st.oblique} img`;
+}
+function finish() {
+  st.done = true; st.phase = "LANDED · DISARMED"; $("hudMode").textContent = st.phase; $("hudRec").hidden = true;
+  $("btnPause").disabled = true; $("btnRTH").disabled = true; $("btnFly").disabled = false; $("btnFly").textContent = "Fly again";
+  st.vel.set(0, 0, 0); droneRoot.quaternion.identity();
+  logMsg(`Landed. ${mmss(st.t)} flight, ${(st.dist / 1000).toFixed(2)} km, ${st.photoCount} nadir + ${st.oblique} oblique images, battery ${(st.wh / MODELS[$("model").value].wh * 100).toFixed(0)} %.`);
+}
+function telemetry() {
+  const w = world; if (!w) return;
+  const p = droneRoot.position, md = MODELS[$("model").value], mount = 0.35 * md.size;
+  const [la, lo] = toLatLon(p.x, p.z), agl = p.y - mount - w.terrain(p.x, p.z);
+  $("tLL").textContent = `${la.toFixed(6)}, ${lo.toFixed(6)}`; $("hudGps").textContent = `GNSS RTK FIX (sim) · ${la.toFixed(5)}, ${lo.toFixed(5)} · ${(w.elev + p.y - mount).toFixed(0)} m MSL`;
+  $("tAlt").textContent = `${Math.max(0, agl).toFixed(1)} m`;
+  $("tSpd").textContent = `${(st ? Math.hypot(st.vel.x, st.vel.z) : 0).toFixed(1)} m/s`;
+  $("tAir").textContent = `${(st ? st.air : 0).toFixed(1)} m/s`;
+  const tilt = st && !st.done ? Math.atan(Math.hypot(st.aCtrl.x, st.aCtrl.z) / G) / DEG : 0;
+  $("tTilt").textContent = `${tilt.toFixed(0)}°`; $("tTilt").style.color = tilt > md.tilt - 2 ? "var(--crit)" : "";
+  $("tHdg").textContent = `${String(Math.round((((st ? st.yaw : 0) / DEG) % 360 + 360) % 360)).padStart(3, "0")}°`;
+  $("tPow").textContent = `${Math.round(st && !st.done ? st.power : 0)} W`;
+  const bat = st ? st.wh / md.wh * 100 : 100; $("tBat").textContent = `${bat.toFixed(0)} %`; $("tBat").style.color = bat < 25 ? "var(--crit)" : bat < 40 ? "var(--warn)" : "";
+  $("tTime").textContent = mmss(st ? st.t : 0); $("tDist").textContent = `${Math.round(st ? st.dist : 0).toLocaleString()} m`;
+  const tot = (Math.floor(w.block / 6) + 1) ** 2; $("tCov").textContent = `${Math.min(100, st ? st.covered.size / tot * 100 : 0).toFixed(0)} %`;
+  if (st) $("progBar").style.width = Math.min(100, (st.wi / (st.pl.wps.length - 1)) * 100) + "%";
+  if (st && st.targetFirst) {
+    const rd = st.ndviReads, mean = rd.length ? rd.reduce((a, b) => a + b, 0) / rd.length : NaN;
+    $("targetOut").innerHTML = `<dt>Target</dt><dd>${C.Tree_ID[w.i]}</dd><dt>Status</dt><dd style="color:var(--resin)">imaged</dd><dt>Images with target</dt><dd>${st.targetImgs} (${st.oblique} oblique)</dd><dt>View blocked / moves</dt><dd>${st.losBlocks} / ${st.moves}</dd>` +
+      `<dt>NDVI given / sim. sensor</dt><dd>${C.NDVI[w.i].toFixed(3)} / ${isNaN(mean) ? "–" : mean.toFixed(3)}</dd><dt>Height ${w.stage ? "projected" : "given"} / sim. LiDAR</dt><dd>${w.trees[0].h.toFixed(2)} / ${st.lidarTargetMax ? st.lidarTargetMax.toFixed(2) : "–"} m</dd>` +
+      `<dt>Grade (given)</dt><dd>${gradeName(w.i)}</dd><dt>Extractable vol. (given)</dt><dd>${C.Extractable_Agarwood_Volume_m3[w.i]} m³</dd>`;
+  }
+}
+
+/* ================= Cameras & render loop ================= */
+let camMode = "tpp", orbitA = 0.6, orbitE = 0.55, orbitD = 260, dragging = null;
+function setCam(m) { camMode = m; document.querySelectorAll("[data-cam]").forEach(x => x.classList.toggle("on", x.dataset.cam === m)); }
+document.querySelectorAll("[data-cam]").forEach(b => b.onclick = () => setCam(b.dataset.cam));
+canvas.addEventListener("pointerdown", e => { dragging = [e.clientX, e.clientY]; if (camMode !== "orbit") setCam("orbit"); canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove", e => { if (!dragging) return; orbitA -= (e.clientX - dragging[0]) * 0.006; orbitE = clamp(orbitE + (e.clientY - dragging[1]) * 0.004, 0.08, 1.45); dragging = [e.clientX, e.clientY]; });
+canvas.addEventListener("pointerup", () => dragging = null);
+canvas.addEventListener("wheel", e => { e.preventDefault(); orbitD = clamp(orbitD * (1 + Math.sign(e.deltaY) * 0.1), 20, 900); }, { passive: false });
+
+function frustumLines(agl) {
+  const p = droneRoot.position, fw = agl * Math.tan(HFOV / 2), fh = agl * Math.tan(VFOV / 2), w = world;
+  const c = [[p.x - fw, p.z - fh], [p.x + fw, p.z - fh], [p.x + fw, p.z + fh], [p.x - fw, p.z + fh]].map(([x, z]) => new THREE.Vector3(x, w.terrain(x, z) + 0.5, z));
+  const pts = []; c.forEach((v, k) => pts.push(p.clone(), v, v, c[(k + 1) % 4]));
+  camFrustum.geometry.dispose(); camFrustum.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+}
+function drawChart(cv, data, lo, hi, color, unit) {
+  const dpr = Math.min(devicePixelRatio, 2), W = cv.clientWidth, H = cv.clientHeight;
+  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const css = getComputedStyle(document.documentElement);
+  const pl = 34, pr = 8, pt = 8, pb = 16, w = W - pl - pr, h = H - pt - pb;
+  g.font = "10px " + css.getPropertyValue("--f-data"); g.fillStyle = css.getPropertyValue("--ink-dim"); g.strokeStyle = css.getPropertyValue("--line"); g.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) { const v = lo + (hi - lo) * k / 4, y = pt + h - h * k / 4; g.beginPath(); g.moveTo(pl, y + .5); g.lineTo(W - pr, y + .5); g.stroke(); g.fillText(Number.isInteger(v) ? v : v.toFixed(1), 2, y + 3); }
+  g.fillText(unit, pl, H - 3); g.textAlign = "right"; g.fillText("last 60 s", W - pr, H - 3); g.textAlign = "left";
+  if (!data.length) return;
+  const X = k => pl + (k / 239) * w, Y = v => pt + h - (clamp(v, lo, hi) - lo) / (hi - lo) * h;
+  g.strokeStyle = color; g.lineWidth = 1.6; g.beginPath(); let pen = false;
+  data.forEach((v, k) => { if (isNaN(v)) { pen = false; return; } pen ? g.lineTo(X(k), Y(v)) : g.moveTo(X(k), Y(v)); pen = true; });
+  g.stroke();
+  const lv = data[data.length - 1]; if (!isNaN(lv)) { g.beginPath(); g.arc(X(data.length - 1), Y(lv), 3, 0, 7); g.fillStyle = color; g.fill(); }
+}
+
+let last = performance.now(), chartT = 0, teleT = 0;
+function loop(now) {
+  const dtReal = Math.min(0.1, (now - last) / 1000); last = now;
+  const scale = +$("tscale").value, simDt = scale * dtReal;
+  const sub = Math.max(1, Math.ceil(simDt / 0.02));
+  for (let k = 0; k < sub; k++) step(simDt / sub);
+  swayU.uTime.value += simDt;
+  const p = droneRoot.position, md = MODELS[$("model").value], mount = 0.35 * md.size;
+  const flying = st && !st.done && p.y - mount > (world ? world.terrain(p.x, p.z) : 0) + 0.2;
+  droneYaw.userData.props.forEach(pr => pr.rotation.y += flying ? 1.3 : 0);
+  droneYaw.userData.led.visible = Math.floor(now / 500) % 2 === 0;
+  if (world) world.beacon.material.opacity = 0.35 + 0.25 * Math.sin(now / 300);
+  const agl = world ? p.y - mount - world.terrain(p.x, p.z) : 0;
+  if (flying && (!trailPts.length || trailPts[trailPts.length - 1].distanceTo(p) > 2)) { trailPts.push(p.clone()); if (trailPts.length > 4000) trailPts.shift(); trail.geometry.dispose(); trail.geometry = new THREE.BufferGeometry().setFromPoints(trailPts); }
+  if (world) { frustumLines(Math.max(agl, 0.01)); camFrustum.visible = agl > 2 && !(st && st.insp); }
+  // rain animation (falls with the wind, follows the viewer)
+  if (rain.visible && env) {
+    const kk = dtReal * Math.min(scale, 4), fall = 9 * kk, wx = env.wdir.x * env.U * kk, wz = env.wdir.z * env.U * kk;
+    const L = 0.9 + env.U * 0.04;
+    for (let k = 0; k < rainN; k++) {
+      const o = k * 6; let y = rainPos[o + 1] - fall, x = rainPos[o] + wx, z = rainPos[o + 2] + wz;
+      if (y < 0) { y += 90; x = (R0() - .5) * 160; z = (R0() - .5) * 160; }
+      if (x > 80) x -= 160; if (x < -80) x += 160; if (z > 80) z -= 160; if (z < -80) z += 160;
+      rainPos[o] = x; rainPos[o + 1] = y; rainPos[o + 2] = z; rainPos[o + 3] = x - env.wdir.x * env.U * 0.06; rainPos[o + 4] = y + L; rainPos[o + 5] = z - env.wdir.z * env.U * 0.06;
+    }
+    rain.geometry.attributes.position.needsUpdate = true;
+    const anchor = camMode === "orbit" || camMode === "top" ? new THREE.Vector3(0, world ? world.terrain(0, 0) : 0, 0) : p;
+    rain.position.set(anchor.x, (world ? world.terrain(anchor.x, anchor.z) : 0) - 5, anchor.z);
+  }
+  // lightning flash
+  if (env && env.wKey === "storm") { if (!st || st.done) { nextBolt -= dtReal; if (nextBolt < 0) { flash = 0.15; nextBolt = 6 + R0() * 12; } } }
+  if (flash > 0) { flash -= dtReal; hemi.intensity = 2.2; } else if (env) hemi.intensity = 0.55 + 0.25 * env.wx.light;
+  // main camera
+  const yaw = st ? st.yaw : 0, fwd = new THREE.Vector3(Math.sin(yaw), 0, -Math.cos(yaw));
+  if (camMode === "tpp") {
+    const desired = p.clone().addScaledVector(fwd, -30).add(new THREE.Vector3(0, 13, 0));
+    if (world) desired.y = Math.max(desired.y, canopyTopNear(desired.x, desired.z, 2) + 3);
+    cam.position.lerp(desired, 0.08); cam.lookAt(p.x, p.y - 5, p.z); cam.fov = 55;
+  } else if (camMode === "fpv") {
+    cam.fov = 82;
+    cam.position.copy(p).addScaledVector(fwd, 0.6).add(new THREE.Vector3(0, -0.3, 0));
+    if (st && st.insp) cam.lookAt(0, world.terrain(0, 0) + world.trees[0].h * 0.62, 0);
+    else cam.lookAt(cam.position.clone().addScaledVector(fwd, 10).add(new THREE.Vector3(0, -10 * Math.tan(28 * DEG), 0)));
+    if (st && !st.done) { const lat = st.aCtrl.x * Math.cos(yaw) + st.aCtrl.z * Math.sin(yaw); cam.rotateZ(clamp(-lat / G, -0.6, 0.6) * 0.8); }
+  } else if (camMode === "orbit") {
+    const c = new THREE.Vector3(0, world ? world.terrain(0, 0) : 0, 0);
+    cam.fov = 55; cam.position.set(c.x + orbitD * Math.cos(orbitE) * Math.sin(orbitA), c.y + orbitD * Math.sin(orbitE), c.z + orbitD * Math.cos(orbitE) * Math.cos(orbitA)); cam.lookAt(c.x, c.y + 10, c.z);
+  } else { cam.fov = 55; cam.position.set(p.x, p.y + 360, p.z + 0.01); cam.lookAt(p.x, p.y, p.z); }
+  droneRoot.visible = camMode !== "fpv";
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  if (canvas.width !== Math.floor(W * R3.getPixelRatio())) R3.setSize(W, H, false);
+  cam.aspect = W / H; cam.updateProjectionMatrix();
+  R3.setViewport(0, 0, W, H); R3.setScissor(0, 0, W, H); R3.render(scene, cam);
+  // inset: gimbal camera (nadir in survey, locked on target during inspection)
+  const box = $("insetBox").getBoundingClientRect(), cvr = canvas.getBoundingClientRect();
+  const iw = box.width, ih = box.height, ix = box.left - cvr.left, iy = H - (box.top - cvr.top) - ih;
+  nadir.position.set(p.x, p.y - 0.4, p.z);
+  if (st && st.insp && world) { nadir.up.set(0, 1, 0); nadir.lookAt(0, world.terrain(0, 0) + world.trees[0].h * 0.62, 0); $("camLabel").textContent = `${band} · oblique · simulated`; }
+  else { nadir.up.set(Math.sin(yaw), 0, -Math.cos(yaw)); nadir.lookAt(p.x, p.y - 50, p.z); $("camLabel").textContent = `${band} · nadir · simulated`; }
+  const vis = [droneRoot.visible, camFrustum.visible, pathLine.visible, losLine.visible];
+  droneRoot.visible = false; camFrustum.visible = false; pathLine.visible = false; losLine.visible = false;
+  R3.setViewport(ix, iy, iw, ih); R3.setScissor(ix, iy, iw, ih); R3.render(scene, nadir);
+  [droneRoot.visible, camFrustum.visible, pathLine.visible, losLine.visible] = vis;
+  if (sun.castShadow && world) { sun.target.position.set(p.x * 0.5, 0, p.z * 0.5); }
+  if (now - teleT > 100) { teleT = now; telemetry(); }
+  if (now - chartT > 250) { chartT = now; const top = Math.max(20, Math.ceil(((world && world.forestTop) || 20) / 10) * 10 + 10); drawChart($("chLidar"), lidarHist, 0, top, "#6fb3d9", "m"); drawChart($("chNdvi"), ndviHist, -0.2, 1, "#6cc28a", "NDVI"); }
+  requestAnimationFrame(loop);
+}
+
+/* ================= Route tour (2D) ================= */
+const hav = (a, b) => { const R = 6371000, dLa = (C.Latitude[b] - C.Latitude[a]) * DEG, dLo = (C.Longitude[b] - C.Longitude[a]) * DEG; const h = Math.sin(dLa / 2) ** 2 + Math.cos(C.Latitude[a] * DEG) * Math.cos(C.Latitude[b] * DEG) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
+let tourAnim = null;
+$("btnTour").onclick = () => {
+  if (sel < 0) return;
+  const n = clamp(+$("tourN").value || 12, 3, 60), spd = clamp(+$("tourSpd").value || 15, 5, 21);
+  const near = [...Array(N).keys()].filter(k => k !== sel).map(k => [k, hav(sel, k)]).sort((a, b) => a[1] - b[1]).slice(0, n - 1).map(x => x[0]);
+  let route = [sel], left = new Set(near);
+  while (left.size) { const cur = route[route.length - 1]; let best = null, bd = 1e18; for (const k of left) { const d = hav(cur, k); if (d < bd) { bd = d; best = k; } } route.push(best); left.delete(best); }
+  route.push(sel);
+  let improved = true; while (improved) { improved = false; for (let a = 1; a < route.length - 2; a++) for (let b = a + 1; b < route.length - 1; b++) { const d0 = hav(route[a - 1], route[a]) + hav(route[b], route[b + 1]), d1 = hav(route[a - 1], route[b]) + hav(route[a], route[b + 1]); if (d1 < d0 - 1) { route.splice(a, b - a + 1, ...route.slice(a, b + 1).reverse()); improved = true; } } }
+  const legs = route.slice(1).map((k, j) => hav(route[j], k)), tot = legs.reduce((a, b) => a + b, 0);
+  const c = env || conditions(), headwind = c.U * 0.64; // average along-track penalty over random headings
+  const flightMin = (tot / Math.max(spd - headwind * 0.5, 3) + 90 * n) / 60;
+  const climb = route.slice(1).reduce((s, k, j) => s + Math.max(0, C.pub_elev_m[k] - C.pub_elev_m[route[j]]), 0);
+  const usable = c.md.wh * c.capFactor * 0.75 / (c.md.pHover * Math.sqrt(1.225 / c.rho)) * 60;
+  const batteries = Math.ceil(flightMin / usable);
+  const maxLeg = Math.max(...legs), vlos = 500;
+  $("tourOut").innerHTML = `<dt>Trees visited</dt><dd>${n}</dd><dt>Route length</dt><dd>${(tot / 1000).toFixed(1)} km</dd><dt>Longest leg</dt><dd>${(maxLeg / 1000).toFixed(2)} km</dd><dt>Total climb (DEM)</dt><dd>${Math.round(climb).toLocaleString()} m</dd><dt>Flight time in current wind</dt><dd>${flightMin.toFixed(0)} min</dd><dt>Batteries (${usable.toFixed(0)} min usable)</dt><dd>${batteries}</dd>` +
+    `<dt>Legs beyond visual line of sight</dt><dd>${legs.filter(l => l > vlos).length} of ${legs.length}</dd>`;
+  logMsg(`Route tour: ${n} trees, ${(tot / 1000).toFixed(1)} km, ${Math.round(climb)} m of climbing. ${legs.filter(l => l > vlos).length} legs exceed a ${vlos} m visual-line-of-sight radius; a real operation needs BVLOS permission or one launch site per tree.`, "warn");
+  if (tourLine) map.removeLayer(tourLine); if (tourDrone) map.removeLayer(tourDrone);
+  const ll = route.map(k => [C.Latitude[k], C.Longitude[k]]);
+  tourLine = L.polyline(ll, { color: "#d99a3e", weight: 2, dashArray: "6 5" }).addTo(map);
+  tourDrone = L.circleMarker(ll[0], { radius: 6, color: "#fff", weight: 2, fillColor: "#6fb3d9", fillOpacity: 1 }).addTo(map);
+  map.fitBounds(tourLine.getBounds(), { padding: [20, 20] });
+  cancelAnimationFrame(tourAnim); let seg = 0, f = 0;
+  const animate = () => { f += 0.02 * (+$("tscale").value) / Math.max(1, legs[seg] / 1500); if (f >= 1) { f = 0; seg++; } if (seg >= ll.length - 1) { tourDrone.setLatLng(ll[0]); return; } tourDrone.setLatLng([ll[seg][0] + (ll[seg + 1][0] - ll[seg][0]) * f, ll[seg][1] + (ll[seg + 1][1] - ll[seg][1]) * f]); tourAnim = requestAnimationFrame(animate); };
+  animate();
+};
+
+/* ================= Export ================= */
+function exportCSV(name, header, rows) {
+  const txt = [header.join(","), ...rows.map(r => r.map(v => typeof v === "string" && /[,"]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join(","))].join("\n");
+  $("csvout").value = txt;
+  try { navigator.clipboard.writeText(txt).catch(() => $("csvout").select()); } catch (e) { $("csvout").select(); }
+  try { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], { type: "text/csv" })); a.download = name; document.body.appendChild(a); a.click(); a.remove(); } catch (e) {}
+  logMsg(`${name}: ${rows.length} rows. Everything except the given tree fields is simulated.`);
+}
+$("exFlight").onclick = () => exportCSV(`flightlog_${world ? C.Tree_ID[world.i] : ""}.csv`, ["t_s", "lat", "lon", "alt_agl_m", "ground_speed_mps", "air_speed_mps", "wind_mps", "tilt_deg", "heading_deg", "power_w", "battery_pct", "sim_lidar_canopy_m", "sim_ndvi", "over_target", "los_clear", "weather", "rain_mmh", "temp_c", "phase"], flog);
+$("exPhotos").onclick = () => exportCSV(`photos_${world ? C.Tree_ID[world.i] : ""}.csv`, ["photo", "t_s", "lat", "lon", "alt_agl_m", "footprint_w_m", "footprint_h_m", "contains_target", "type"], photos);
+$("exScene").onclick = () => { if (!world) return; exportCSV(`scene_${C.Tree_ID[world.i]}.csv`, ["kind", "lat", "lon", "ground_rel_m", "height_m", "crown_radius_m", "ndvi", "size_source"], world.trees.map(t => { const [la, lo] = t.kind === 0 ? [C.Latitude[world.i], C.Longitude[world.i]] : toLatLon(t.x, t.z); return [["given", "simulated_agarwood", "simulated_native", "simulated_stump"][t.kind], la.toFixed(7), lo.toFixed(7), t.y.toFixed(1), t.h.toFixed(2), t.cr.toFixed(2), t.ndvi.toFixed(3), t.kind === 0 ? (world.stage ? "dataset, projected to year " + world.stage : "dataset") : t.kind === 2 ? "public_canopy_layers" : "dataset_row:" + t.src]; })); };
+
+/* ================= Start ================= */
+let start = 0; while (start < N - 1 && !(C.state[start] === 0 && C.pub_worldcover_center[start] === 10 && C.pub_canopy_cover[start] > 0.6)) start++;
+const qs = new URLSearchParams(location.search); if (qs.get("q") === "low") $("quality").value = "low";
+refreshConditions();
+selectTree(start, false);
+requestAnimationFrame(loop);
+</script>
